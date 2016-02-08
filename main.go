@@ -66,15 +66,22 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func serverAddHandker(w http.ResponseWriter, r *http.Request) {
+	type ServerResponse struct {
+		Hostname  string `json:"hostname"`
+		URL       string `json:"url"`
+		Resources int    `json:"resources"`
+	}
+
 	type JSONResponse struct {
-		Success bool   `json:"success"`
-		Message string `json:"message"`
+		Success bool           `json:"success"`
+		Message string         `json:"message"`
+		Server  ServerResponse `json:"server"`
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 
 	if r.FormValue("server_name") == "" || r.FormValue("user_name") == "" || r.FormValue("password") == "" {
-		json.NewEncoder(w).Encode(JSONResponse{false, "Missing Data"})
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Missing Data"})
 		return
 	}
 
@@ -88,20 +95,20 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 
 	client, err := ssh.Dial("tcp", r.FormValue("server_name")+":22", config)
 	if err != nil {
-		json.NewEncoder(w).Encode(JSONResponse{false, fmt.Sprintf("Error connecting to %s. Please check the url and username/password.", r.FormValue("server_name"))})
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: fmt.Sprintf("Error connecting to %s. Please check the url and username/password.", r.FormValue("server_name"))})
 		return
 	}
 
 	session, err := client.NewSession()
 	if err != nil {
-		json.NewEncoder(w).Encode(JSONResponse{false, "Unable to create session"})
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Unable to create session"})
 		return
 	}
 	defer session.Close()
 
 	result, err := session.CombinedOutput("nvidia-smi -L")
 	if err != nil {
-		json.NewEncoder(w).Encode(JSONResponse{false, "Unable to execute command"})
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Unable to execute command"})
 		return
 	}
 
@@ -117,7 +124,7 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 		if len(result) == 1 && len(result[0]) == 3 {
 			session, err := client.NewSession()
 			if err != nil {
-				json.NewEncoder(w).Encode(JSONResponse{false, "Unable to create session"})
+				json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Unable to create session"})
 				return
 			}
 
@@ -127,5 +134,5 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 
 	servers = append(servers, server)
 
-	json.NewEncoder(w).Encode(JSONResponse{true, string(result)})
+	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: string(result), Server: ServerResponse{server.Hostname, server.URL, len(server.Resources)}})
 }
