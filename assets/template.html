@@ -62,7 +62,7 @@
         <button type="submit" class="btn btn-default col-lg-1">Add</button>
       </form>
 
-      <table class="table table-bordered table-hover text-center">
+      <table id="templates" class="table table-bordered table-hover text-center">
         <thead>
           <tr><th class="col-md-12">Name</th></tr>
         </thead>
@@ -87,6 +87,8 @@
     });
 
     $(document).ready(function() {
+      $("#templates").tablesorter({ sortList: [[0, 0]] });
+
       $('.btn-file :file').on('change', function() {
           var input = $(this).parents('.input-group').find(':text');
 
