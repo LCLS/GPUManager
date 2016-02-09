@@ -14,24 +14,51 @@ import (
 )
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
+	type JSONResponse struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+
 	type ServerInfo struct {
 		Hostname, URL string
 		InUse, Max    int
 		PercentUsed   float64
 	}
 
-	var data []ServerInfo
+	rows, err := DB.Query("SELECT server.url, server_resource.inuse FROM server JOIN server_resource ON server.url=server_resource.server")
+	if err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
 
-	for _, server := range servers {
-		info := ServerInfo{Hostname: server.Hostname, URL: server.URL, Max: len(server.Resources)}
-		for _, resource := range server.Resources {
-			if resource.InUse {
-				info.InUse += 1
+	var data []ServerInfo
+	for rows.Next() {
+		var name string
+		var inuse bool
+		if err := rows.Scan(&name, &inuse); err != nil {
+			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+			return
+		}
+
+		found := false
+		for i := 0; i < len(data); i++ {
+			if data[i].URL == name {
+				found = true
+				data[i].Max += 1
+				if inuse {
+					data[i].InUse += 1
+				}
+				break
 			}
 		}
-		info.PercentUsed = (float64(info.InUse) / float64(info.Max)) * 100.0
 
-		data = append(data, info)
+		if !found {
+			data = append(data, ServerInfo{URL: name, Hostname: strings.Split(name, ".")[0], InUse: 0, Max: 1, PercentUsed: 0})
+		}
+	}
+
+	for i := 0; i < len(data); i++ {
+		data[i].PercentUsed = (float64(data[i].InUse) / float64(data[i].Max)) * 100.0
 	}
 
 	t, _ := template.ParseFiles("index.html")
@@ -87,6 +114,11 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 
 	server := Server{Hostname: strings.Split(r.FormValue("server_name"), ".")[0], URL: r.FormValue("server_name")}
 
+	if _, err := DB.Exec("insert into server(url, username, password) values (?,?,?)", server.URL, r.FormValue("user_name"), r.FormValue("password")); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
 	// Find GPUs
 	scanner := bufio.NewScanner(bytes.NewReader(result))
 	scanner.Split(bufio.ScanLines)
@@ -101,7 +133,13 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			server.Resources = append(server.Resources, Resource{Name: result[0][1], UUID: result[0][2], InUse: false, Connection: session})
+			res := Resource{Name: result[0][1], UUID: result[0][2], InUse: false, Connection: session}
+			server.Resources = append(server.Resources, res)
+
+			if _, err := DB.Exec("insert into server_resource(uuid, name, inuse, server) values (?,?,?,?)", res.UUID, res.Name, res.InUse, server.URL); err != nil {
+				json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+				return
+			}
 		}
 	}
 
