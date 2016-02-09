@@ -105,6 +105,8 @@ func modelAddHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	model.ID = int(id)
+
 	for _, fileHeaders := range r.MultipartForm.File {
 		for _, fileHeader := range fileHeaders {
 			file, _ := fileHeader.Open()
@@ -120,4 +122,42 @@ func modelAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: "", Model: &model})
+}
+
+func modelRemoveHandler(w http.ResponseWriter, r *http.Request) {
+	type JSONResponse struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	id := r.FormValue("id")
+	if id == "" {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Missing Data"})
+		return
+	}
+
+	var name string
+	if err := DB.QueryRow("SELECT name FROM model WHERE id = ?", id).Scan(&name); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	if err := os.RemoveAll("data/" + name); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	if _, err := DB.Exec("DELETE FROM model_file WHERE model_id = ?", id); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	if _, err := DB.Exec("DELETE FROM model WHERE id = ?", id); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(JSONResponse{Success: true})
 }

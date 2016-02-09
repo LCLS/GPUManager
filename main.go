@@ -36,9 +36,11 @@ func main() {
 
 	http.HandleFunc("/model", modelHandler)
 	http.HandleFunc("/model/add", modelAddHandler)
+	http.HandleFunc("/model/remove", modelRemoveHandler)
 
 	http.HandleFunc("/template", templateHandler)
 	http.HandleFunc("/template/add", templateAddHandler)
+	http.HandleFunc("/template/remove", templateRemoveHandler)
 
 	http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
 }

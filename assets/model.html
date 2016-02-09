@@ -73,13 +73,14 @@
 
       <table id="models" class="table table-bordered table-hover text-center">
         <thead>
-          <tr><th class="col-md-2">Name</th><th class="col-md-10">Files</th></tr>
+          <tr><th class="col-md-2">Name</th><th class="col-md-9">Files</th><th class="col-md-1">Remove</th></tr>
         </thead>
         <tbody>
           {{range .}}
           <tr id="{{.ID}}">
             <td>{{.Name}}</td>
             <td>{{join .Files}}</td>
+            <td><button type="button" onclick="removeItem({{.ID}})" class="btn btn-danger">Remove</button></td>
           </tr>
           {{end}}
         </tbody>
@@ -96,6 +97,23 @@
       var input = $(this), numFiles = input.get(0).files ? input.get(0).files.length : 1, label = input.val().replace(/\\/g, '/').replace(/.*\//, '');
       input.trigger('fileselect', [numFiles, label]);
     });
+
+    function removeItem(id) {
+      $.ajax({
+        type        : 'POST',
+        url         : '/model/remove',
+        data        :  "id="+id,
+        dataType    : 'json',
+        encode      : true
+      }).done(function(data) {
+        console.log(data);
+        if( data.success ) {
+          $("#"+id).remove();
+        }else{
+          $("<div class=\"alert alert-danger alert-dismissible\" role=\"alert\"><button type=\"button\" class=\"close\" data-dismiss=\"alert\" aria-label=\"Close\"><span aria-hidden=\"true\">&times;</span></button>"+data.message+"</div>").insertBefore("form")
+        }
+      });
+    }
 
     $(document).ready(function() {
       $("#models").tablesorter({ sortList: [[0, 0]] });
@@ -124,7 +142,7 @@
         }).done(function(data) {
           console.log(data);
           if( data.success ) {
-            $('table > tbody:last').append("<tr id="+data.model.ID+"><td>"+data.model.Name+"</td><td>"+data.model.Files.join(", ")+"</td></tr>")
+            $('table > tbody:last').append("<tr id="+data.model.ID+"><td>"+data.model.Name+"</td><td>"+data.model.Files.join(", ")+"</td><td><button type=\"button\" onclick=\"removeItem("+data.model.ID+")\" class=\"btn btn-danger\">Remove</button></td></tr>")
           }else{
             $("<div class=\"alert alert-danger alert-dismissible\" role=\"alert\"><button type=\"button\" class=\"close\" data-dismiss=\"alert\" aria-label=\"Close\"><span aria-hidden=\"true\">&times;</span></button>"+data.message+"</div>").insertBefore("form")
           }

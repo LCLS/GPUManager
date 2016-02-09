@@ -78,10 +78,51 @@ func templateAddHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if _, err := DB.Exec("insert into template(name, file) values (?,?)", template.Name, template.File); err != nil {
+	res, err := DB.Exec("insert into template(name, file) values (?,?)", template.Name, template.File)
+	if err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}
 
+	id, err := res.LastInsertId()
+	if err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+	template.ID = int(id)
+
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: "", Template: &template})
+}
+
+func templateRemoveHandler(w http.ResponseWriter, r *http.Request) {
+	type JSONResponse struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	id := r.FormValue("id")
+	if id == "" {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Missing Data"})
+		return
+	}
+
+	var file string
+	if err := DB.QueryRow("SELECT file FROM template WHERE id = ?", id).Scan(&file); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	if err := os.Remove(file); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	if _, err := DB.Exec("DELETE FROM template WHERE id = ?", id); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(JSONResponse{Success: true})
 }
