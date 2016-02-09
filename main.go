@@ -8,22 +8,9 @@ import (
 	"net/http"
 
 	_ "github.com/mattn/go-sqlite3"
-	"golang.org/x/crypto/ssh"
 )
 
-type Server struct {
-	Hostname, URL string
-	Resources     []Resource
-}
-
-type Resource struct {
-	InUse      bool
-	Name, UUID string
-	Connection *ssh.Session
-}
-
 var DB *sql.DB
-var servers []Server
 
 func main() {
 	port := flag.Int("port", 8080, "HTTP Server Port")
@@ -41,6 +28,7 @@ func main() {
 
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/server/add", serverAddHandker)
+	http.HandleFunc("/server/remove", serverRemoveHandler)
 	http.HandleFunc("/server/toggle", serverToggleHandler)
 
 	http.HandleFunc("/job", jobHandler)

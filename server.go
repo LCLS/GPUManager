@@ -13,6 +13,18 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+type Server struct {
+	ID            int
+	Hostname, URL string
+	Resources     []Resource
+}
+
+type Resource struct {
+	InUse      bool
+	Name, UUID string
+	Connection *ssh.Session
+}
+
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	type JSONResponse struct {
 		Success bool   `json:"success"`
@@ -70,6 +82,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 	type ServerResponse struct {
+		ID        int
 		Hostname  string `json:"hostname"`
 		URL       string `json:"url"`
 		Resources int    `json:"resources"`
@@ -129,6 +142,8 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	server.ID = int(id)
+
 	// Find GPUs
 	scanner := bufio.NewScanner(bytes.NewReader(result))
 	scanner.Split(bufio.ScanLines)
@@ -153,9 +168,7 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	servers = append(servers, server)
-
-	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: string(result), Server: ServerResponse{server.Hostname, server.URL, len(server.Resources)}})
+	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: string(result), Server: ServerResponse{server.ID, server.Hostname, server.URL, len(server.Resources)}})
 }
 
 func serverToggleHandler(w http.ResponseWriter, r *http.Request) {
@@ -185,4 +198,31 @@ func serverToggleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Enabled: !enabled})
+}
+
+func serverRemoveHandler(w http.ResponseWriter, r *http.Request) {
+	type JSONResponse struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	id := r.FormValue("id")
+	if id == "" {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Missing Data"})
+		return
+	}
+
+	if _, err := DB.Exec("DELETE FROM server_resource WHERE server_id = ?", id); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	if _, err := DB.Exec("DELETE FROM server WHERE id = ?", id); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(JSONResponse{Success: true})
 }
