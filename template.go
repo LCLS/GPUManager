@@ -14,8 +14,6 @@ type Template struct {
 	File string
 }
 
-var templates []Template
-
 func templateHandler(w http.ResponseWriter, r *http.Request) {
 	type JSONResponse struct {
 		Success bool   `json:"success"`
@@ -27,7 +25,24 @@ func templateHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}
-	if err := t.Execute(w, models); err != nil {
+
+	rows, err := DB.Query("SELECT * FROM template")
+	if err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	var templates []Template
+	for rows.Next() {
+		var name, file string
+		if err := rows.Scan(&name, &file); err != nil {
+			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+			return
+		}
+		templates = append(templates, Template{Name: name, File: file})
+	}
+
+	if err := t.Execute(w, templates); err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}
@@ -61,6 +76,10 @@ func templateAddHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	templates = append(templates, template)
+	if _, err := DB.Exec("insert into template(name, file) values (?,?)", template.Name, template.File); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: "", Template: &template})
 }

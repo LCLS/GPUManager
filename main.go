@@ -3,16 +3,19 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
 	"text/template"
 
+	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -27,11 +30,18 @@ type Resource struct {
 	Connection *ssh.Session
 }
 
+var DB *sql.DB
 var servers []Server
 
 func main() {
 	port := flag.Int("port", 8080, "HTTP Server Port")
 	flag.Parse()
+
+	var err error
+	DB, err = sql.Open("sqlite3", "file:simulation.db?cache=shared&mode=rwc")
+	if err != nil {
+		log.Fatalln("[Database] Error:", err)
+	}
 
 	http.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("./js/"))))
 	http.Handle("/fonts/", http.StripPrefix("/fonts/", http.FileServer(http.Dir("./fonts/"))))
