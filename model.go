@@ -11,6 +11,7 @@ import (
 )
 
 type Model struct {
+	ID    int
 	Name  string
 	Files []string
 }
@@ -33,7 +34,7 @@ func modelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := DB.Query("SELECT model.name, model_file.name FROM model JOIN model_file ON model.name=model_file.model")
+	rows, err := DB.Query("SELECT model.id, model.name, model_file.name FROM model JOIN model_file ON model.id=model_file.model_id")
 	if err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
@@ -41,8 +42,9 @@ func modelHandler(w http.ResponseWriter, r *http.Request) {
 
 	var models []Model
 	for rows.Next() {
+		var id int
 		var name, file string
-		if err := rows.Scan(&name, &file); err != nil {
+		if err := rows.Scan(&id, &name, &file); err != nil {
 			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 			return
 		}
@@ -57,7 +59,7 @@ func modelHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !found {
-			models = append(models, Model{Name: name, Files: []string{file}})
+			models = append(models, Model{ID: id, Name: name, Files: []string{file}})
 		}
 	}
 
@@ -91,7 +93,14 @@ func modelAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	model := Model{Name: name}
-	if _, err := DB.Exec("insert into model(name) values (?)", model.Name); err != nil {
+	res, err := DB.Exec("insert into model(name) values (?)", model.Name)
+	if err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}
@@ -103,7 +112,7 @@ func modelAddHandler(w http.ResponseWriter, r *http.Request) {
 			ioutil.WriteFile(fmt.Sprintf("data/%s/%s", name, fileHeader.Filename), buf, os.ModePerm)
 			model.Files = append(model.Files, fileHeader.Filename)
 
-			if _, err := DB.Exec("insert into model_file(name, model) values (?, ?)", fileHeader.Filename, name); err != nil {
+			if _, err := DB.Exec("insert into model_file(name, model_id) values (?, ?)", fileHeader.Filename, id); err != nil {
 				json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 				return
 			}

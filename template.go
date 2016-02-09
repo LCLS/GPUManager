@@ -10,6 +10,7 @@ import (
 )
 
 type Template struct {
+	ID   int
 	Name string
 	File string
 }
@@ -34,12 +35,13 @@ func templateHandler(w http.ResponseWriter, r *http.Request) {
 
 	var templates []Template
 	for rows.Next() {
+		var id int
 		var name, file string
-		if err := rows.Scan(&name, &file); err != nil {
+		if err := rows.Scan(&id, &name, &file); err != nil {
 			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 			return
 		}
-		templates = append(templates, Template{Name: name, File: file})
+		templates = append(templates, Template{ID: id, Name: name, File: file})
 	}
 
 	if err := t.Execute(w, templates); err != nil {

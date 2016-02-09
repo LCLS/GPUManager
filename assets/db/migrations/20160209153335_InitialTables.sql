@@ -1,11 +1,11 @@
 -- +goose Up
-create table server(url text not null primary key, username text not null, password text not null);
-create table server_resource(uuid text not null primary key, name text not null, inuse boolean not null, server text, FOREIGN KEY(server) REFERENCES server(url));
+create table server(id integer primary key, url text not null, username text not null, password text not null, enabled boolean not null default 1);
+create table server_resource(uuid text not null primary key, name text not null, inuse boolean not null, server_id integer not null, FOREIGN KEY(server_id) REFERENCES server(id));
 
-create table model(name text not null primary key);
-create table model_file(name text not null primary key, model text not null, FOREIGN KEY(model) REFERENCES model(name));
+create table model(id integer primary key, name text not null);
+create table model_file(id integer primary key, name text not null, model_id integer not null, FOREIGN KEY(model_id) REFERENCES model(id));
 
-create table template(name text not null primary key, file text not null);
+create table template(id integer primary key, name text not null, file text not null);
 
 -- +goose Down
 drop table template;

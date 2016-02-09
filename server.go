@@ -20,12 +20,14 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type ServerInfo struct {
+		ID            int
 		Hostname, URL string
+		Enabled       bool
 		InUse, Max    int
 		PercentUsed   float64
 	}
 
-	rows, err := DB.Query("SELECT server.url, server_resource.inuse FROM server JOIN server_resource ON server.url=server_resource.server")
+	rows, err := DB.Query("SELECT server.id, server.url, server.enabled, server_resource.inuse FROM server JOIN server_resource ON server.id=server_resource.server_id")
 	if err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
@@ -33,9 +35,10 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 	var data []ServerInfo
 	for rows.Next() {
+		var id int
 		var name string
-		var inuse bool
-		if err := rows.Scan(&name, &inuse); err != nil {
+		var enabled, inuse bool
+		if err := rows.Scan(&id, &name, &enabled, &inuse); err != nil {
 			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 			return
 		}
@@ -53,7 +56,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !found {
-			data = append(data, ServerInfo{URL: name, Hostname: strings.Split(name, ".")[0], InUse: 0, Max: 1, PercentUsed: 0})
+			data = append(data, ServerInfo{ID: id, URL: name, Hostname: strings.Split(name, ".")[0], Enabled: enabled, InUse: 0, Max: 1, PercentUsed: 0})
 		}
 	}
 
@@ -114,7 +117,14 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 
 	server := Server{Hostname: strings.Split(r.FormValue("server_name"), ".")[0], URL: r.FormValue("server_name")}
 
-	if _, err := DB.Exec("insert into server(url, username, password) values (?,?,?)", server.URL, r.FormValue("user_name"), r.FormValue("password")); err != nil {
+	res, err := DB.Exec("insert into server(url, username, password) values (?,?,?)", server.URL, r.FormValue("user_name"), r.FormValue("password"))
+	if err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}
@@ -136,7 +146,7 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 			res := Resource{Name: result[0][1], UUID: result[0][2], InUse: false, Connection: session}
 			server.Resources = append(server.Resources, res)
 
-			if _, err := DB.Exec("insert into server_resource(uuid, name, inuse, server) values (?,?,?,?)", res.UUID, res.Name, res.InUse, server.URL); err != nil {
+			if _, err := DB.Exec("insert into server_resource(uuid, name, inuse, server_id) values (?,?,?,?)", res.UUID, res.Name, res.InUse, id); err != nil {
 				json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 				return
 			}
@@ -146,4 +156,33 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 	servers = append(servers, server)
 
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: string(result), Server: ServerResponse{server.Hostname, server.URL, len(server.Resources)}})
+}
+
+func serverToggleHandler(w http.ResponseWriter, r *http.Request) {
+	type JSONResponse struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Enabled bool   `json:"enabled"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	id := r.FormValue("id")
+	if id == "" {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Missing Data"})
+		return
+	}
+
+	var enabled bool
+	if err := DB.QueryRow("SELECT enabled FROM server WHERE id = ?", id).Scan(&enabled); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	if _, err := DB.Exec("update server set enabled = ? where id = ?", !enabled, id); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(JSONResponse{Success: true, Enabled: !enabled})
 }

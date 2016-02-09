@@ -41,6 +41,7 @@ func main() {
 
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/server/add", serverAddHandker)
+	http.HandleFunc("/server/toggle", serverToggleHandler)
 
 	http.HandleFunc("/job", jobHandler)
 	http.HandleFunc("/job/add", jobAddHandler)
