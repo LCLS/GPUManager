@@ -43,6 +43,9 @@ func main() {
 	http.HandleFunc("/model", modelHandler)
 	http.HandleFunc("/model/add", modelAddHandler)
 
+	http.HandleFunc("/template", templateHandler)
+	http.HandleFunc("/template/add", templateAddHandler)
+
 	http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
 }
 
