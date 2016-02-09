@@ -7,16 +7,15 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"strings"
 	"text/template"
 
 	"golang.org/x/crypto/ssh"
 )
 
 type Server struct {
-	ID            int
-	Hostname, URL string
-	Resources     []Resource
+	ID                    int
+	URL, WorkingDirectory string
+	Resources             []Resource
 }
 
 type Resource struct {
@@ -32,14 +31,14 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type ServerInfo struct {
-		ID            int
-		Hostname, URL string
-		Enabled       bool
-		InUse, Max    int
-		PercentUsed   float64
+		ID                    int
+		URL, WorkingDirectory string
+		Enabled               bool
+		InUse, Max            int
+		PercentUsed           float64
 	}
 
-	rows, err := DB.Query("SELECT server.id, server.url, server.enabled, server_resource.inuse FROM server JOIN server_resource ON server.id=server_resource.server_id")
+	rows, err := DB.Query("SELECT server.id, server.url, server.wdir, server.enabled, server_resource.inuse FROM server JOIN server_resource ON server.id=server_resource.server_id")
 	if err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
@@ -48,9 +47,9 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	var data []ServerInfo
 	for rows.Next() {
 		var id int
-		var name string
+		var name, wdir string
 		var enabled, inuse bool
-		if err := rows.Scan(&id, &name, &enabled, &inuse); err != nil {
+		if err := rows.Scan(&id, &name, &wdir, &enabled, &inuse); err != nil {
 			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 			return
 		}
@@ -68,7 +67,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !found {
-			data = append(data, ServerInfo{ID: id, URL: name, Hostname: strings.Split(name, ".")[0], Enabled: enabled, InUse: 0, Max: 1, PercentUsed: 0})
+			data = append(data, ServerInfo{ID: id, URL: name, WorkingDirectory: wdir, Enabled: enabled, InUse: 0, Max: 1, PercentUsed: 0})
 		}
 	}
 
@@ -82,10 +81,10 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 	type ServerResponse struct {
-		ID        int
-		Hostname  string `json:"hostname"`
-		URL       string `json:"url"`
-		Resources int    `json:"resources"`
+		ID               int
+		WorkingDirectory string `json:"wdir"`
+		URL              string `json:"url"`
+		Resources        int    `json:"resources"`
 	}
 
 	type JSONResponse struct {
@@ -128,9 +127,9 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	server := Server{Hostname: strings.Split(r.FormValue("server_name"), ".")[0], URL: r.FormValue("server_name")}
+	server := Server{URL: r.FormValue("server_name"), WorkingDirectory: r.FormValue("root")}
 
-	res, err := DB.Exec("insert into server(url, username, password) values (?,?,?)", server.URL, r.FormValue("user_name"), r.FormValue("password"))
+	res, err := DB.Exec("insert into server(url, wdir, username, password) values (?,?,?,?)", server.URL, server.WorkingDirectory, r.FormValue("user_name"), r.FormValue("password"))
 	if err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
@@ -168,7 +167,7 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: string(result), Server: ServerResponse{server.ID, server.Hostname, server.URL, len(server.Resources)}})
+	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: string(result), Server: ServerResponse{server.ID, server.WorkingDirectory, server.URL, len(server.Resources)}})
 }
 
 func serverToggleHandler(w http.ResponseWriter, r *http.Request) {
