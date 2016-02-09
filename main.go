@@ -42,6 +42,9 @@ func main() {
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/server/add", serverAddHandker)
 
+	http.HandleFunc("/job", jobHandler)
+	http.HandleFunc("/job/add", jobAddHandler)
+
 	http.HandleFunc("/model", modelHandler)
 	http.HandleFunc("/model/add", modelAddHandler)
 
