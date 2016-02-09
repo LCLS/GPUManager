@@ -15,8 +15,6 @@ type Model struct {
 	Files []string
 }
 
-var models []Model
-
 func modelHandler(w http.ResponseWriter, r *http.Request) {
 	type JSONResponse struct {
 		Success bool   `json:"success"`
@@ -34,6 +32,35 @@ func modelHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}
+
+	rows, err := DB.Query("SELECT model.name, model_file.name FROM model JOIN model_file ON model.name=model_file.model")
+	if err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	var models []Model
+	for rows.Next() {
+		var name, file string
+		if err := rows.Scan(&name, &file); err != nil {
+			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+			return
+		}
+
+		found := false
+		for i := 0; i < len(models); i++ {
+			if models[i].Name == name {
+				found = true
+				models[i].Files = append(models[i].Files, file)
+				break
+			}
+		}
+
+		if !found {
+			models = append(models, Model{Name: name, Files: []string{file}})
+		}
+	}
+
 	if err := t.Execute(w, models); err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
@@ -64,6 +91,10 @@ func modelAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	model := Model{Name: name}
+	if _, err := DB.Exec("insert into model(name) values (?)", model.Name); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
 
 	for _, fileHeaders := range r.MultipartForm.File {
 		for _, fileHeader := range fileHeaders {
@@ -71,9 +102,13 @@ func modelAddHandler(w http.ResponseWriter, r *http.Request) {
 			buf, _ := ioutil.ReadAll(file)
 			ioutil.WriteFile(fmt.Sprintf("data/%s/%s", name, fileHeader.Filename), buf, os.ModePerm)
 			model.Files = append(model.Files, fileHeader.Filename)
+
+			if _, err := DB.Exec("insert into model_file(name, model) values (?, ?)", fileHeader.Filename, name); err != nil {
+				json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+				return
+			}
 		}
 	}
 
-	models = append(models, model)
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: "", Model: &model})
 }
