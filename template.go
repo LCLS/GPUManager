@@ -58,15 +58,6 @@ func templateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(Templates) == 0 {
-		templates, err := LoadTemplates(DB)
-		if err != nil {
-			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
-			return
-		}
-		Templates = templates
-	}
-
 	if err := t.Execute(w, Templates); err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
