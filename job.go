@@ -61,26 +61,10 @@ func jobHandler(w http.ResponseWriter, r *http.Request) {
 		Jobs      []Job
 	}
 
-	var data JobData
-
-	rows, err := DB.Query("SELECT id, name FROM model")
-	if err != nil {
-		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
-		return
-	}
-
-	for rows.Next() {
-		var id int
-		var name string
-		if err := rows.Scan(&id, &name); err != nil {
-			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
-			return
-		}
-		data.Models = append(data.Models, Model{ID: id, Name: name})
-	}
+	data := JobData{Models: Models, Templates: Templates}
 
 	// Load Jobs
-	rows, err = DB.Query("SELECT id, name, model_id, template_id FROM job")
+	rows, err := DB.Query("SELECT id, name, model_id, template_id FROM job")
 	if err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return

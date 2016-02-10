@@ -86,8 +86,8 @@
         {{range .Jobs}}
           <tr id="{{.ID}}">
             <td>{{.Name}}</td>
-            <td>{{.Model}}</td>
-            <td>{{.Template}}</td>
+            <td>{{.Model.Name}}</td>
+            <td>{{.Template.Name}}</td>
             <td>
               <div class="progress">
                 <div class="progress-bar progress-bar-striped" role="progressbar" aria-valuenow="{{complete .}}" aria-valuemin="0" aria-valuemax="{{count .Instances}}" style="width: 0%;">
