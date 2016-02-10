@@ -6,13 +6,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
-	"strings"
 	"text/template"
 
 	"golang.org/x/crypto/ssh"
@@ -60,92 +56,25 @@ func LoadServers(db *sql.DB) ([]Server, error) {
 
 	// Load Resources
 	for i := 0; i < len(servers); i++ {
-		rows, err := db.Query("SELECT inuse, name, uuid FROM server_resource WHERE server_id = ?", servers[i].ID)
+		rows, err := db.Query("SELECT inuse, name, uuid, device FROM server_resource WHERE server_id = ?", servers[i].ID)
 		if err != nil {
 			return nil, err
 		}
 
 		for rows.Next() {
 			var inuse bool
+			var device_id int
 			var name, uuid string
-			if err := rows.Scan(&inuse, &name, &uuid); err != nil {
+			if err := rows.Scan(&inuse, &name, &uuid, &device_id); err != nil {
 				return nil, err
 			}
 
-			servers[i].Resources = append(servers[i].Resources, Resource{Name: name, UUID: uuid, InUse: inuse})
+			servers[i].Resources = append(servers[i].Resources, Resource{Name: name, UUID: uuid, InUse: inuse, ServerID: servers[i].ID, DeviceID: device_id})
 		}
 		rows.Close()
 	}
 
 	return servers, nil
-}
-
-func (s *Server) ConnectResources() error {
-	// Test if we can connect
-	config := &ssh.ClientConfig{
-		User: s.Username,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(s.Password),
-		},
-	}
-
-	client, err := ssh.Dial("tcp", s.URL+":22", config)
-	if err != nil {
-		return err
-	}
-
-	// Send Model Data
-	session, err := client.NewSession()
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		w, _ := session.StdinPipe()
-		fmt.Fprintln(w, "D0755", 0, "model")
-
-		for _, model := range Models {
-			fmt.Fprintln(w, "D0755", 0, strings.ToLower(model.Name))
-			for _, file := range model.Files {
-				fIn, err := os.Open(fmt.Sprintf("data/%s/%s", model.Name, file))
-				if err != nil {
-					log.Fatalln(err)
-				}
-
-				fStat, err := fIn.Stat()
-				if err != nil {
-					log.Fatalln(err)
-				}
-
-				fmt.Fprintln(w, "C0644", fStat.Size(), file)
-				io.Copy(w, fIn)
-				fmt.Fprint(w, "\x00")
-			}
-		}
-		w.Close()
-	}()
-
-	if s.WorkingDirectory != "" {
-		if err := session.Run("scp -tr " + s.WorkingDirectory); err != nil {
-			log.Fatalln(err)
-		}
-	} else {
-		if err := session.Run("scp -tr ./"); err != nil {
-			log.Fatalln(err)
-		}
-	}
-	session.Close()
-
-	for i := 0; i < len(s.Resources); i++ {
-		session, err := client.NewSession()
-		if err != nil {
-			return err
-		}
-
-		go s.Resources[i].Handle(session)
-	}
-
-	return nil
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
@@ -227,8 +156,9 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session.Close()
+	client.Close()
 
-	server := Server{URL: r.FormValue("server_name"), WorkingDirectory: r.FormValue("root")}
+	server := Server{URL: r.FormValue("server_name"), WorkingDirectory: r.FormValue("root"), Enabled: true}
 
 	res, err := DB.Exec("insert into server(url, wdir, username, password) values (?,?,?,?)", server.URL, server.WorkingDirectory, r.FormValue("user_name"), r.FormValue("password"))
 	if err != nil {
@@ -248,22 +178,25 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 	scanner := bufio.NewScanner(bytes.NewReader(result))
 	scanner.Split(bufio.ScanLines)
 
+	device := 0
 	re := regexp.MustCompile("GPU \\d+: (.+) \\(UUID: (.+)\\)")
 	for scanner.Scan() {
 		result := re.FindAllStringSubmatch(scanner.Text(), -1)
 		if len(result) == 1 && len(result[0]) == 3 {
-			res := Resource{Name: result[0][1], UUID: result[0][2], InUse: false}
+			res := Resource{Name: result[0][1], UUID: result[0][2], InUse: false, ServerID: server.ID, DeviceID: device}
 			server.Resources = append(server.Resources, res)
+			go res.Handle()
 
-			if _, err := DB.Exec("insert into server_resource(uuid, name, inuse, server_id) values (?,?,?,?)", res.UUID, res.Name, res.InUse, id); err != nil {
+			device += 1
+
+			if _, err := DB.Exec("insert into server_resource(uuid, name, inuse, device_id, server_id) values (?,?,?,?,?)", res.UUID, res.Name, res.InUse, device, id); err != nil {
 				json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 				return
 			}
 		}
 	}
 
-	server.ConnectResources()
-
+	Servers = append(Servers, server)
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: string(result), Server: ServerResponse{server.ID, server.WorkingDirectory, server.URL, len(server.Resources)}})
 }
 
@@ -305,9 +238,14 @@ func serverRemoveHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	id := r.FormValue("id")
-	if id == "" {
+	if r.FormValue("id") == "" {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Missing Data"})
+		return
+	}
+
+	id, err := strconv.Atoi(r.FormValue("id"))
+	if err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}
 
@@ -320,6 +258,16 @@ func serverRemoveHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}
+
+	// Remove Servers
+	index := 0
+	for i := 0; i < len(Servers); i++ {
+		if Servers[i].ID == id {
+			index = i
+			break
+		}
+	}
+	Servers = append(Servers[:index], Servers[index+1:]...)
 
 	json.NewEncoder(w).Encode(JSONResponse{Success: true})
 }

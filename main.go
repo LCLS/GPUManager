@@ -69,41 +69,24 @@ func main() {
 	Templates = templates
 
 	// Load Job Instances
-	rows, err := DB.Query("select j.name, j.model_id, j.template_id, i.id, i.completed FROM job_instance AS i JOIN job AS j WHERE j.id=i.job_id")
+	jobs, err := LoadJobs(DB)
 	if err != nil {
 		log.Fatalln(err)
 	}
+	Jobs = jobs
 
-	for rows.Next() {
-		var name string
-		var id, model_id, template_id int
-		var completed bool
-		if err := rows.Scan(&name, &model_id, &template_id, &id, &completed); err != nil {
-			log.Fatalln(err)
-		}
-
-		instance := JobInstance{ID: id, Completed: completed, Name: name}
-
-		for i := 0; i < len(Models); i++ {
-			if Models[i].ID == model_id {
-				instance.Model = Models[i]
-				break
+	for _, job := range Jobs {
+		for i := 0; i < len(job.Instances); i++ {
+			if !job.Instances[i].Completed {
+				JobQueue.Enqueue(job.Instances[i])
 			}
 		}
-
-		for i := 0; i < len(Templates); i++ {
-			if Templates[i].ID == template_id {
-				instance.Template = Templates[i]
-				break
-			}
-		}
-
-		JobQueue.Enqueue(instance)
 	}
-	rows.Close()
 
 	for _, server := range Servers {
-		server.ConnectResources()
+		for _, resource := range server.Resources {
+			go resource.Handle()
+		}
 	}
 
 	http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)

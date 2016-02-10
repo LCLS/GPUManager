@@ -1,21 +1,160 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"log"
+	"math/rand"
+	"os"
+	"strings"
 	"sync"
+	"text/template"
 
 	"golang.org/x/crypto/ssh"
 )
 
 type Resource struct {
-	InUse            bool
-	Name, UUID       string
-	WorkingDirectory string
+	ServerID, DeviceID int
+	InUse              bool
+	Name, UUID         string
 }
 
-func (res *Resource) Handle(s *ssh.Session) {
-	modes := ssh.TerminalModes{
+func (r *Resource) Handle() {
+	server := FindServer(r.ServerID, Servers)
+
+	config := &ssh.ClientConfig{
+		User: server.Username,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(server.Password),
+		},
+	}
+
+	var err error
+	var client *ssh.Client = nil
+	for {
+		if !server.Enabled {
+			client = nil
+		} else {
+			if client == nil {
+				client, err = ssh.Dial("tcp", server.URL+":22", config)
+				if err != nil {
+					log.Fatalln(err)
+				}
+			}
+
+			if !r.InUse {
+				jobInstance := JobQueue.Pop().(JobInstance)
+				job := FindJob(jobInstance.JobID, Jobs)
+
+				// Send Model Data
+				session, err := client.NewSession()
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				go func() {
+					w, _ := session.StdinPipe()
+					fmt.Fprintln(w, "D0755", 0, "model")
+					fmt.Fprintln(w, "D0755", 0, strings.ToLower(job.Model.Name))
+					for _, file := range job.Model.Files {
+						fIn, err := os.Open(fmt.Sprintf("data/%s/%s", job.Model.Name, file))
+						if err != nil {
+							log.Fatalln(err)
+						}
+
+						fStat, err := fIn.Stat()
+						if err != nil {
+							log.Fatalln(err)
+						}
+
+						fmt.Fprintln(w, "C0644", fStat.Size(), file)
+						io.Copy(w, fIn)
+						fmt.Fprint(w, "\x00")
+					}
+					w.Close()
+				}()
+
+				if server.WorkingDirectory != "" {
+					if err := session.Run("scp -tr " + server.WorkingDirectory); err != nil {
+						log.Fatalln(err)
+					}
+				} else {
+					if err := session.Run("scp -tr ./"); err != nil {
+						log.Fatalln(err)
+					}
+				}
+				session.Close()
+
+				// Update Template
+				type TemplateData struct {
+					Input, Output  string
+					Seed, DeviceID int
+				}
+
+				data := TemplateData{Seed: rand.Int()}
+				data.DeviceID = r.DeviceID
+				data.Output = fmt.Sprintf("sim.%d.dcd", data.Seed)
+				for _, file := range job.Model.Files {
+					parts := strings.Split(strings.ToLower(file), ".")
+					if parts[len(parts)-1] == "tpr" {
+						data.Input = strings.ToLower(fmt.Sprintf("gromacstprfile ../../../model/%s/%s", job.Model.Name, file))
+						break
+					}
+				}
+
+				temp, err := template.New(strings.Split(job.Template.File, "/")[1]).ParseFiles(job.Template.File)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				var templateData bytes.Buffer
+				if err := temp.Execute(&templateData, data); err != nil {
+					log.Fatalln(err)
+				}
+
+				// Send Template Data
+				session, err = client.NewSession()
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				go func() {
+					w, _ := session.StdinPipe()
+					fmt.Fprintln(w, "D0755", 0, "job")
+					fmt.Fprintln(w, "D0755", 0, strings.ToLower(job.Name))
+					fmt.Fprintln(w, "D0755", 0, strings.ToLower(fmt.Sprintf("%d", jobInstance.ID-job.Instances[0].ID)))
+					fmt.Fprintln(w, "C0644", templateData.Len(), "sim.conf")
+					w.Write(templateData.Bytes())
+					fmt.Fprint(w, "\x00")
+					w.Close()
+				}()
+
+				if server.WorkingDirectory != "" {
+					if err := session.Run("scp -tr " + server.WorkingDirectory); err != nil {
+						log.Fatalln(err)
+					}
+				} else {
+					if err := session.Run("scp -tr ./"); err != nil {
+						log.Fatalln(err)
+					}
+				}
+				session.Close()
+
+				log.Println("Sent Model and Template")
+				for {
+
+				}
+			}
+		}
+	}
+
+	/*client, err := ssh.Dial("tcp", server.URL+":22", config)
+	if err != nil {
+		log.Fatalln(err)
+	}*/
+
+	/*modes := ssh.TerminalModes{
 		ssh.ECHO:          0,     // disable echoing
 		ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
 		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
@@ -52,52 +191,48 @@ func (res *Resource) Handle(s *ssh.Session) {
 	if res.WorkingDirectory != "" {
 		in <- "cd " + res.WorkingDirectory
 		<-out
-	}
+	}*/
 
-	for {
-		if !res.InUse {
-			//jobInstance := JobQueue.Pop().(*JobInstance)
+	//jobInstance := JobQueue.Pop().(*JobInstance)
 
-			// Copy Template and Make Running Directory
-			/*go func() {
-				w, _ := session.StdinPipe()
-				fmt.Fprintln(w, "D0755", 0, "job")
-				fmt.Fprintln(w, "D0755", 0, strings.ToLower(jobInstance.Name))
+	// Copy Template and Make Running Directory
+	/*go func() {
+		w, _ := session.StdinPipe()
+		fmt.Fprintln(w, "D0755", 0, "job")
+		fmt.Fprintln(w, "D0755", 0, strings.ToLower(jobInstance.Name))
 
-				fIn, err := os.Open(jobInstance.Template)
-				if err != nil {
-					log.Fatalln(err)
-				}
-
-				fStat, err := fIn.Stat()
-				if err != nil {
-					log.Fatalln(err)
-				}
-
-				fmt.Fprintln(w, "C0644", fStat.Size(), file)
-				io.Copy(w, fIn)
-				fmt.Fprint(w, "\x00")
-				w.Close()
-			}()*/
-
-			/*if err := s.Run("scp -tr ./"); err != nil {
-				log.Fatalln(err)
-			}*/
-
-			/*r.Input <- "cd Simulation/1VII-Langevin/fermife.crc.nd.edu/0/"
-			<-r.Output
-
-			log.Println("Starting ProtoMol")
-			r.Input <- "ProtoMol sim.conf &> log.txt &"
-			log.Println(r.UUID, <-r.Output)
-
-			r.Input <- "wait $!"
-			log.Println(r.UUID, <-r.Output)
-
-			r.Input <- "echo $?"
-			log.Println(r.UUID, <-r.Output)*/
+		fIn, err := os.Open(jobInstance.Template)
+		if err != nil {
+			log.Fatalln(err)
 		}
-	}
+
+		fStat, err := fIn.Stat()
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		fmt.Fprintln(w, "C0644", fStat.Size(), file)
+		io.Copy(w, fIn)
+		fmt.Fprint(w, "\x00")
+		w.Close()
+	}()*/
+
+	/*if err := s.Run("scp -tr ./"); err != nil {
+		log.Fatalln(err)
+	}*/
+
+	/*r.Input <- "cd Simulation/1VII-Langevin/fermife.crc.nd.edu/0/"
+	<-r.Output
+
+	log.Println("Starting ProtoMol")
+	r.Input <- "ProtoMol sim.conf &> log.txt &"
+	log.Println(r.UUID, <-r.Output)
+
+	r.Input <- "wait $!"
+	log.Println(r.UUID, <-r.Output)
+
+	r.Input <- "echo $?"
+	log.Println(r.UUID, <-r.Output)*/
 }
 
 func MuxShell(w io.Writer, r io.Reader, e io.Reader) (chan<- string, <-chan string) {
