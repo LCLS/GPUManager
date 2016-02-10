@@ -3,10 +3,16 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"os"
 	"regexp"
+	"strconv"
+	"strings"
 	"text/template"
 
 	"golang.org/x/crypto/ssh"
@@ -15,13 +21,131 @@ import (
 type Server struct {
 	ID                    int
 	URL, WorkingDirectory string
+	Username, Password    string
+	Enabled               bool
 	Resources             []Resource
 }
 
-type Resource struct {
-	InUse      bool
-	Name, UUID string
-	Connection *ssh.Session
+var Servers []Server
+
+func FindServer(id int, servers []Server) *Server {
+	for i := 0; i < len(servers); i++ {
+		if servers[i].ID == id {
+			return &servers[i]
+		}
+	}
+	return nil
+}
+
+func LoadServers(db *sql.DB) ([]Server, error) {
+	var servers []Server
+
+	// Load Servers
+	rows, err := db.Query("SELECT id, url, wdir, username, password, enabled FROM server")
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		var id int
+		var enabled bool
+		var url, wdir, username, password string
+		if err := rows.Scan(&id, &url, &wdir, &username, &password, &enabled); err != nil {
+			return nil, err
+		}
+
+		servers = append(servers, Server{ID: id, URL: url, WorkingDirectory: wdir, Username: username, Password: password, Enabled: enabled})
+	}
+	rows.Close()
+
+	// Load Resources
+	for i := 0; i < len(servers); i++ {
+		rows, err := db.Query("SELECT inuse, name, uuid FROM server_resource WHERE server_id = ?", servers[i].ID)
+		if err != nil {
+			return nil, err
+		}
+
+		for rows.Next() {
+			var inuse bool
+			var name, uuid string
+			if err := rows.Scan(&inuse, &name, &uuid); err != nil {
+				return nil, err
+			}
+
+			servers[i].Resources = append(servers[i].Resources, Resource{Name: name, UUID: uuid, InUse: inuse})
+		}
+		rows.Close()
+	}
+
+	return servers, nil
+}
+
+func (s *Server) ConnectResources() error {
+	// Test if we can connect
+	config := &ssh.ClientConfig{
+		User: s.Username,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(s.Password),
+		},
+	}
+
+	client, err := ssh.Dial("tcp", s.URL+":22", config)
+	if err != nil {
+		return err
+	}
+
+	// Send Model Data
+	session, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		w, _ := session.StdinPipe()
+		fmt.Fprintln(w, "D0755", 0, "model")
+
+		for _, model := range Models {
+			fmt.Fprintln(w, "D0755", 0, strings.ToLower(model.Name))
+			for _, file := range model.Files {
+				fIn, err := os.Open(fmt.Sprintf("data/%s/%s", model.Name, file))
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				fStat, err := fIn.Stat()
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				fmt.Fprintln(w, "C0644", fStat.Size(), file)
+				io.Copy(w, fIn)
+				fmt.Fprint(w, "\x00")
+			}
+		}
+		w.Close()
+	}()
+
+	if s.WorkingDirectory != "" {
+		if err := session.Run("scp -tr " + s.WorkingDirectory); err != nil {
+			log.Fatalln(err)
+		}
+	} else {
+		if err := session.Run("scp -tr ./"); err != nil {
+			log.Fatalln(err)
+		}
+	}
+	session.Close()
+
+	for i := 0; i < len(s.Resources); i++ {
+		session, err := client.NewSession()
+		if err != nil {
+			return err
+		}
+
+		go s.Resources[i].Handle(session)
+	}
+
+	return nil
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
@@ -38,41 +162,17 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		PercentUsed           float64
 	}
 
-	rows, err := DB.Query("SELECT server.id, server.url, server.wdir, server.enabled, server_resource.inuse FROM server JOIN server_resource ON server.id=server_resource.server_id")
-	if err != nil {
-		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
-		return
-	}
-
 	var data []ServerInfo
-	for rows.Next() {
-		var id int
-		var name, wdir string
-		var enabled, inuse bool
-		if err := rows.Scan(&id, &name, &wdir, &enabled, &inuse); err != nil {
-			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
-			return
-		}
-
-		found := false
-		for i := 0; i < len(data); i++ {
-			if data[i].URL == name {
-				found = true
-				data[i].Max += 1
-				if inuse {
-					data[i].InUse += 1
-				}
-				break
+	for _, server := range Servers {
+		info := ServerInfo{ID: server.ID, URL: server.URL, WorkingDirectory: server.WorkingDirectory, Enabled: server.Enabled, Max: len(server.Resources)}
+		for _, resource := range server.Resources {
+			if resource.InUse {
+				info.InUse += 1
 			}
 		}
+		info.PercentUsed = (float64(info.InUse) / float64(info.Max)) * 100.0
 
-		if !found {
-			data = append(data, ServerInfo{ID: id, URL: name, WorkingDirectory: wdir, Enabled: enabled, InUse: 0, Max: 1, PercentUsed: 0})
-		}
-	}
-
-	for i := 0; i < len(data); i++ {
-		data[i].PercentUsed = (float64(data[i].InUse) / float64(data[i].Max)) * 100.0
+		data = append(data, info)
 	}
 
 	t, _ := template.ParseFiles("index.html")
@@ -126,6 +226,7 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Unable to execute command"})
 		return
 	}
+	session.Close()
 
 	server := Server{URL: r.FormValue("server_name"), WorkingDirectory: r.FormValue("root")}
 
@@ -151,13 +252,7 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 	for scanner.Scan() {
 		result := re.FindAllStringSubmatch(scanner.Text(), -1)
 		if len(result) == 1 && len(result[0]) == 3 {
-			session, err := client.NewSession()
-			if err != nil {
-				json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Unable to create session"})
-				return
-			}
-
-			res := Resource{Name: result[0][1], UUID: result[0][2], InUse: false, Connection: session}
+			res := Resource{Name: result[0][1], UUID: result[0][2], InUse: false}
 			server.Resources = append(server.Resources, res)
 
 			if _, err := DB.Exec("insert into server_resource(uuid, name, inuse, server_id) values (?,?,?,?)", res.UUID, res.Name, res.InUse, id); err != nil {
@@ -166,6 +261,8 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	server.ConnectResources()
 
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: string(result), Server: ServerResponse{server.ID, server.WorkingDirectory, server.URL, len(server.Resources)}})
 }
@@ -179,24 +276,25 @@ func serverToggleHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	id := r.FormValue("id")
-	if id == "" {
+	if r.FormValue("id") == "" {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Missing Data"})
 		return
 	}
 
-	var enabled bool
-	if err := DB.QueryRow("SELECT enabled FROM server WHERE id = ?", id).Scan(&enabled); err != nil {
+	id, err := strconv.Atoi(r.FormValue("id"))
+	if err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}
 
-	if _, err := DB.Exec("update server set enabled = ? where id = ?", !enabled, id); err != nil {
+	server := FindServer(id, Servers)
+	if _, err := DB.Exec("update server set enabled = ? where id = ?", !server.Enabled, id); err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}
 
-	json.NewEncoder(w).Encode(JSONResponse{Success: true, Enabled: !enabled})
+	server.Enabled = !server.Enabled
+	json.NewEncoder(w).Encode(JSONResponse{Success: true, Enabled: server.Enabled})
 }
 
 func serverRemoveHandler(w http.ResponseWriter, r *http.Request) {

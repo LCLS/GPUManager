@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -14,6 +15,53 @@ type Model struct {
 	ID    int
 	Name  string
 	Files []string
+}
+
+var Models []Model
+
+func FindModel(id int, models []Model) *Model {
+	for i := 0; i < len(models); i++ {
+		if models[i].ID == id {
+			return &models[i]
+		}
+	}
+	return nil
+}
+
+func LoadModels(db *sql.DB) ([]Model, error) {
+	rows, err := db.Query("SELECT id, name FROM model")
+	if err != nil {
+		return nil, err
+	}
+
+	var models []Model
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		models = append(models, Model{ID: id, Name: name})
+	}
+	rows.Close()
+
+	for i := 0; i < len(models); i++ {
+		rows, err = db.Query("SELECT name FROM model_file WHERE model_id = ?", models[i].ID)
+		if err != nil {
+			return nil, err
+		}
+
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				return nil, err
+			}
+
+			models[i].Files = append(models[i].Files, name)
+		}
+		rows.Close()
+	}
+	return models, nil
 }
 
 func modelHandler(w http.ResponseWriter, r *http.Request) {
@@ -34,36 +82,7 @@ func modelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := DB.Query("SELECT model.id, model.name, model_file.name FROM model JOIN model_file ON model.id=model_file.model_id")
-	if err != nil {
-		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
-		return
-	}
-
-	var models []Model
-	for rows.Next() {
-		var id int
-		var name, file string
-		if err := rows.Scan(&id, &name, &file); err != nil {
-			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
-			return
-		}
-
-		found := false
-		for i := 0; i < len(models); i++ {
-			if models[i].Name == name {
-				found = true
-				models[i].Files = append(models[i].Files, file)
-				break
-			}
-		}
-
-		if !found {
-			models = append(models, Model{ID: id, Name: name, Files: []string{file}})
-		}
-	}
-
-	if err := t.Execute(w, models); err != nil {
+	if err := t.Execute(w, Models); err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}

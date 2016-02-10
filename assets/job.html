@@ -90,8 +90,8 @@
             <td>{{.Template}}</td>
             <td>
               <div class="progress">
-                <div class="progress-bar progress-bar-striped" role="progressbar" aria-valuenow="{{.Completed}}" aria-valuemin="0" aria-valuemax="{{.Instances}}" style="width: 0%;">
-                  <span><strong>{{.Completed}}/{{.Instances}}</strong></span>
+                <div class="progress-bar progress-bar-striped" role="progressbar" aria-valuenow="{{complete .}}" aria-valuemin="0" aria-valuemax="{{count .Instances}}" style="width: 0%;">
+                  <span><strong>{{complete .}}/{{count .Instances}}</strong></span>
                 </div>
               </div>
             </td>
@@ -123,7 +123,7 @@
         }).done(function(data) {
           console.log(data);
           if( data.success ) {
-            $('table > tbody:last').append("<tr id="+data.job.ID+"><td>"+data.job.Name+"</td><td>"+data.job.Model+"</td><td>"+data.job.Template+"</td><td><div class=\"progress\"><div class=\"progress-bar progress-bar-striped\" role=\"progressbar\" aria-valuenow=\"0\" aria-valuemin=\"0\" aria-valuemax=\""+data.job.Instances+"\" style=\"width: 0%;\"><span><strong>0/"+data.job.Instances+"</strong></span></div></div></td><td><button type=\"button\" onclick=\"removeItem("+data.job.ID+")\" class=\"btn btn-danger\">Remove</button></td></tr>")
+            $('table > tbody:last').append("<tr id="+data.job.ID+"><td>"+data.job.Name+"</td><td>"+data.job.Model+"</td><td>"+data.job.Template+"</td><td><div class=\"progress\"><div class=\"progress-bar progress-bar-striped\" role=\"progressbar\" aria-valuenow=\"0\" aria-valuemin=\"0\" aria-valuemax=\""+data.job.Instances.length+"\" style=\"width: 0%;\"><span><strong>0/"+data.job.Instances.length+"</strong></span></div></div></td><td><button type=\"button\" onclick=\"removeItem("+data.job.ID+")\" class=\"btn btn-danger\">Remove</button></td></tr>")
           }else{
             $("<div class=\"alert alert-danger alert-dismissible\" role=\"alert\"><button type=\"button\" class=\"close\" data-dismiss=\"alert\" aria-label=\"Close\"><span aria-hidden=\"true\">&times;</span></button>"+data.message+"</div>").insertBefore("form")
           }

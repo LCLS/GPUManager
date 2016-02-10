@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -15,6 +16,36 @@ type Template struct {
 	File string
 }
 
+var Templates []Template
+
+func FindTemplate(id int, templates []Template) *Template {
+	for i := 0; i < len(templates); i++ {
+		if templates[i].ID == id {
+			return &templates[i]
+		}
+	}
+	return nil
+}
+
+func LoadTemplates(db *sql.DB) ([]Template, error) {
+	rows, err := DB.Query("SELECT * FROM template")
+	if err != nil {
+		return nil, err
+	}
+
+	var templates []Template
+	for rows.Next() {
+		var id int
+		var name, file string
+		if err := rows.Scan(&id, &name, &file); err != nil {
+			return nil, err
+		}
+		templates = append(templates, Template{ID: id, Name: name, File: file})
+	}
+
+	return templates, nil
+}
+
 func templateHandler(w http.ResponseWriter, r *http.Request) {
 	type JSONResponse struct {
 		Success bool   `json:"success"`
@@ -27,24 +58,16 @@ func templateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := DB.Query("SELECT * FROM template")
-	if err != nil {
-		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
-		return
-	}
-
-	var templates []Template
-	for rows.Next() {
-		var id int
-		var name, file string
-		if err := rows.Scan(&id, &name, &file); err != nil {
+	if len(Templates) == 0 {
+		templates, err := LoadTemplates(DB)
+		if err != nil {
 			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 			return
 		}
-		templates = append(templates, Template{ID: id, Name: name, File: file})
+		Templates = templates
 	}
 
-	if err := t.Execute(w, templates); err != nil {
+	if err := t.Execute(w, Templates); err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 		return
 	}
@@ -91,6 +114,7 @@ func templateAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	template.ID = int(id)
 
+	Templates = append(Templates, template)
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: "", Template: &template})
 }
 
