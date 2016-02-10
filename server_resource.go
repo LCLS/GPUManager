@@ -7,8 +7,8 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
-	"sync"
 	"text/template"
 
 	"golang.org/x/crypto/ssh"
@@ -144,98 +144,40 @@ func (r *Resource) Handle() {
 
 				r.InUse = true
 
-				// Start Job
+				// Start job and retrieve PID
 				session, err = client.NewSession()
 				if err != nil {
 					log.Fatalln(err)
 				}
 
-				modes := ssh.TerminalModes{
-					ssh.ECHO:          0,     // disable echoing
-					ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
-					ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
-				}
-
-				if err := session.RequestPty("xterm", 80, 40, modes); err != nil {
-					log.Fatal(err)
-				}
-
-				wp, err := session.StdinPipe()
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				rp, err := session.StdoutPipe()
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				in, out := MuxShell(wp, rp)
-				if err := session.Start("/bin/bash"); err != nil {
-					log.Fatal(err)
-				}
-				<-out
-
-				in <- "source ~/.bash_profile"
-				<-out
-
+				command := "/bin/bash\n"
+				command += "source ~/.bash_profile\n"
 				if server.WorkingDirectory != "" {
-					in <- "cd " + server.WorkingDirectory
-					<-out
+					command += "cd " + server.WorkingDirectory + "\n"
+				}
+				command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.ID-job.Instances[0].ID))
+				command += "bash -c 'ProtoMol sim.conf &> log.txt 2>1 & echo $! > pidfile; wait $!; echo $? > exit-status' &> /dev/null &\n"
+				command += "cat pidfile"
+
+				sPID, err := session.CombinedOutput(command)
+				if err != nil {
+					log.Fatalln(err)
 				}
 
-				in <- strings.ToLower(fmt.Sprintf("cd job/%s/%d", job.Name, jobInstance.ID-job.Instances[0].ID))
-				<-out
+				// Parse PID
+				pid, err := strconv.Atoi(strings.TrimSpace(string(sPID)))
+				if err != nil {
+					log.Fatalln(err)
+				}
+				log.Println(pid)
 
-				log.Println(r.UUID, "Starting ProtoMol")
-				in <- "ProtoMol sim.conf &> log.txt &"
-				log.Println(r.UUID, <-out)
+				log.Println("Loop")
+				for {
 
-				log.Println(r.UUID, "Waiting for completion")
-				in <- "wait $!"
-				log.Println(r.UUID, <-out)
-
-				log.Println(r.UUID, "Return Code")
-				in <- "echo $?"
-				log.Println(r.UUID, <-out)
+				}
 
 				session.Close()
 			}
 		}
 	}
-}
-
-func MuxShell(w io.Writer, r io.Reader) (chan<- string, <-chan string) {
-	in := make(chan string, 1)
-	out := make(chan string, 1)
-	var wg sync.WaitGroup
-	wg.Add(1) //for the shell itself
-	go func() {
-		for cmd := range in {
-			wg.Add(1)
-			w.Write([]byte(cmd + "\n"))
-			wg.Wait()
-		}
-	}()
-	go func() {
-		var (
-			buf [65 * 1024]byte
-			t   int
-		)
-		for {
-			n, err := r.Read(buf[t:])
-			if err != nil {
-				close(in)
-				close(out)
-				return
-			}
-			t += n
-			if buf[t-2] == '$' { //assuming the $PS1 == 'sh-4.3$ '
-				out <- string(buf[:t])
-				t = 0
-				wg.Done()
-			}
-		}
-	}()
-	return in, out
 }

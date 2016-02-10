@@ -28,8 +28,8 @@ func (j *Job) Complete() int {
 }
 
 type JobInstance struct {
-	ID        int
-	JobID     int
+	ID, JobID int
+	PID       int
 	Completed bool
 }
 
@@ -185,7 +185,13 @@ func jobAddHandler(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 			return
 		}
-		job.Instances = append(job.Instances, JobInstance{ID: int(iid), Completed: false, JobID: int(id)})
+		job.Instances = append(job.Instances, JobInstance{ID: int(iid), Completed: false, JobID: int(id), PID: -1})
+	}
+
+	for i := 0; i < len(job.Instances); i++ {
+		if !job.Instances[i].Completed {
+			JobQueue.Enqueue(job.Instances[i])
+		}
 	}
 
 	Jobs = append(Jobs, job)
