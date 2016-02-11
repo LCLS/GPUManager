@@ -156,7 +156,7 @@ func (r *Resource) Handle() {
 					command += "cd " + server.WorkingDirectory + "\n"
 				}
 				command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.ID-job.Instances[0].ID))
-				command += "bash -c 'ProtoMol sim.conf &> log.txt 2>1 & echo $! > pidfile; wait $!; echo $? > exit-status' &> /dev/null &\n"
+				command += "bash -c 'ProtoMol sim.conf &> log.txt & echo $! > pidfile; wait $!; echo $? > exit-status' &> /dev/null &\n"
 				command += "cat pidfile"
 
 				sPID, err := session.CombinedOutput(command)
