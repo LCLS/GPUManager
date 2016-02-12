@@ -18,23 +18,22 @@ type Resource struct {
 	ServerID, DeviceID int
 	InUse              bool
 	Name, UUID         string
+	Parent             *Server
 
 	client *ssh.Client
 }
 
 func (r *Resource) Connect() error {
 	if r.client == nil {
-		server := FindServer(r.ServerID, Servers)
-
 		config := &ssh.ClientConfig{
-			User: server.Username,
+			User: r.Parent.Username,
 			Auth: []ssh.AuthMethod{
-				ssh.Password(server.Password),
+				ssh.Password(r.Parent.Password),
 			},
 		}
 
 		var err error
-		if r.client, err = ssh.Dial("tcp", server.URL+":22", config); err != nil {
+		if r.client, err = ssh.Dial("tcp", r.Parent.URL+":22", config); err != nil {
 			return err
 		}
 	}
@@ -52,12 +51,11 @@ func (r *Resource) Disconnect() error {
 }
 
 func (r *Resource) Handle() {
-	server := FindServer(r.ServerID, Servers)
-	Log := log.New(os.Stdout, fmt.Sprintf("%s[%d] ", server.URL, r.DeviceID), log.Ltime|log.Lshortfile)
+	Log := log.New(os.Stdout, fmt.Sprintf("%s[%d] ", r.Parent.URL, r.DeviceID), log.Ltime|log.Lshortfile)
 
 	for {
 		time.Sleep(1 * time.Second)
-		if !server.Enabled {
+		if !r.Parent.Enabled {
 			r.Disconnect()
 			continue
 		}
@@ -86,8 +84,8 @@ func (r *Resource) Handle() {
 				Log.Fatal(err)
 			}
 
-			sftp.Mkdir(sftp.Join(server.WorkingDirectory, "model"))
-			sftp.Mkdir(sftp.Join(server.WorkingDirectory, "model", strings.ToLower(job.Model.Name)))
+			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "model"))
+			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "model", strings.ToLower(job.Model.Name)))
 
 			for _, file := range job.Model.Files {
 				fIn, err := os.Open(fmt.Sprintf("data/%s/%s", job.Model.Name, file))
@@ -96,7 +94,7 @@ func (r *Resource) Handle() {
 				}
 				defer fIn.Close()
 
-				fOut, err := sftp.Create(sftp.Join(server.WorkingDirectory, "model", strings.ToLower(job.Model.Name), file))
+				fOut, err := sftp.Create(sftp.Join(r.Parent.WorkingDirectory, "model", strings.ToLower(job.Model.Name), file))
 				if err != nil {
 					Log.Fatalln(err)
 				}
@@ -112,11 +110,11 @@ func (r *Resource) Handle() {
 				Log.Fatalln(err)
 			}
 
-			sftp.Mkdir(sftp.Join(server.WorkingDirectory, "job"))
-			sftp.Mkdir(sftp.Join(server.WorkingDirectory, "job", strings.ToLower(job.Name)))
-			sftp.Mkdir(sftp.Join(server.WorkingDirectory, "job", strings.ToLower(job.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence(job)))))
+			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "job"))
+			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(job.Name)))
+			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(job.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence(job)))))
 
-			fOut, err := sftp.Create(sftp.Join(server.WorkingDirectory, "job", strings.ToLower(job.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence(job))), "sim.conf"))
+			fOut, err := sftp.Create(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(job.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence(job))), "sim.conf"))
 			if err != nil {
 				Log.Fatalln(err)
 			}
@@ -135,8 +133,8 @@ func (r *Resource) Handle() {
 
 			command := "/bin/bash\n"
 			command += "source ~/.bash_profile\n"
-			if server.WorkingDirectory != "" {
-				command += "cd " + server.WorkingDirectory + "\n"
+			if r.Parent.WorkingDirectory != "" {
+				command += "cd " + r.Parent.WorkingDirectory + "\n"
 			}
 			command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.NumberInSequence(job)))
 			command += "bash -c 'ProtoMol sim.conf &> Log.txt & echo $! > pidfile; wait $!; echo $? > exit-status' &> /dev/null &\n"
@@ -173,8 +171,8 @@ func (r *Resource) Handle() {
 		}
 
 		command := ""
-		if server.WorkingDirectory != "" {
-			command += "cd " + server.WorkingDirectory + "\n"
+		if r.Parent.WorkingDirectory != "" {
+			command += "cd " + r.Parent.WorkingDirectory + "\n"
 		}
 		command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.NumberInSequence(job)))
 		command += fmt.Sprintf("bash -c 'while [[ ( -d /proc/%d ) && ( -z `grep zombie /proc/%d/status` ) ]]; do sleep 1; done; sleep 1; cat exit-status'", jobInstance.PID, jobInstance.PID)

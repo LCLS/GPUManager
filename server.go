@@ -69,7 +69,7 @@ func LoadServers(db *sql.DB) ([]Server, error) {
 				return nil, err
 			}
 
-			servers[i].Resources = append(servers[i].Resources, Resource{Name: name, UUID: uuid, InUse: inuse, ServerID: servers[i].ID, DeviceID: device_id})
+			servers[i].Resources = append(servers[i].Resources, Resource{Name: name, UUID: uuid, InUse: inuse, ServerID: servers[i].ID, DeviceID: device_id, Parent: &servers[i]})
 		}
 		rows.Close()
 	}
