@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -9,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/pkg/sftp"
@@ -108,36 +106,12 @@ func (r *Resource) Handle() {
 			}
 
 			time.Sleep(1 * time.Second)
-			// Update Template
-			Log.Println("Uploading Template")
-			type TemplateData struct {
-				Input, Output  string
-				Seed, DeviceID int
-			}
-
-			data := TemplateData{Seed: rand.Int()}
-			data.DeviceID = r.DeviceID
-			data.Output = fmt.Sprintf("sim.%d.dcd", data.Seed)
-			for _, file := range job.Model.Files {
-				parts := strings.Split(strings.ToLower(file), ".")
-				if parts[len(parts)-1] == "tpr" {
-					data.Input = strings.ToLower(fmt.Sprintf("gromacstprfile ../../../model/%s/%s", job.Model.Name, file))
-					break
-				}
-			}
-
-			temp, err := template.New(strings.Split(job.Template.File, "/")[1]).ParseFiles(job.Template.File)
+			// Send Template Data
+			template, err := job.Template.Process(r.DeviceID, *job)
 			if err != nil {
 				Log.Fatalln(err)
 			}
 
-			var templateData bytes.Buffer
-			if err := temp.Execute(&templateData, data); err != nil {
-				Log.Fatalln(err)
-			}
-
-			time.Sleep(1 * time.Second)
-			// Send Template Data
 			sftp.Mkdir(sftp.Join(server.WorkingDirectory, "job"))
 			sftp.Mkdir(sftp.Join(server.WorkingDirectory, "job", strings.ToLower(job.Name)))
 			sftp.Mkdir(sftp.Join(server.WorkingDirectory, "job", strings.ToLower(job.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence(job)))))
@@ -146,7 +120,7 @@ func (r *Resource) Handle() {
 			if err != nil {
 				Log.Fatalln(err)
 			}
-			fOut.Write(templateData.Bytes())
+			fOut.Write(template)
 			fOut.Close()
 
 			sftp.Close()

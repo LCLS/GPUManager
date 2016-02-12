@@ -1,19 +1,52 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"os"
+	"strings"
 )
 
 type Template struct {
 	ID   int
 	Name string
 	File string
+}
+
+func (t *Template) Process(device int, job Job) ([]byte, error) {
+	type TemplateData struct {
+		Input, Output  string
+		Seed, DeviceID int
+	}
+
+	data := TemplateData{Seed: rand.Int()}
+	data.DeviceID = device
+	data.Output = fmt.Sprintf("sim.%d.dcd", data.Seed)
+	for _, file := range job.Model.Files {
+		parts := strings.Split(strings.ToLower(file), ".")
+		if parts[len(parts)-1] == "tpr" {
+			data.Input = strings.ToLower(fmt.Sprintf("gromacstprfile ../../../model/%s/%s", job.Model.Name, file))
+			break
+		}
+	}
+
+	temp, err := template.New(strings.Split(job.Template.File, "/")[1]).ParseFiles(job.Template.File)
+	if err != nil {
+		return nil, err
+	}
+
+	var templateData bytes.Buffer
+	if err := temp.Execute(&templateData, data); err != nil {
+		return nil, err
+	}
+
+	return templateData.Bytes(), nil
 }
 
 var Templates []Template
