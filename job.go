@@ -189,13 +189,12 @@ func jobAddHandler(w http.ResponseWriter, r *http.Request) {
 		job.Instances = append(job.Instances, JobInstance{ID: int(iid), Completed: false, JobID: int(id), PID: -1})
 	}
 
+	Jobs = append(Jobs, job)
 	for i := 0; i < len(job.Instances); i++ {
 		go func(i *JobInstance) {
 			JobQueue <- i
 		}(&job.Instances[i])
 	}
-
-	Jobs = append(Jobs, job)
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: "", Job: job})
 }
 
