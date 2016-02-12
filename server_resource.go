@@ -144,8 +144,8 @@ func (r *Resource) Handle() {
 					if server.WorkingDirectory != "" {
 						command += "cd " + server.WorkingDirectory + "\n"
 					}
-					command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.ID-job.Instances[0].ID))
-					command += "bash -c 'ProtoMol sim.conf &> log.txt & echo $! > pidfile; wait $!; echo $? > exit-status' &> /dev/null &\n"
+					command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.NumberInSequence(job)))
+					command += "bash -c 'ProtoMol sim.conf &> Log.txt & echo $! > pidfile; wait $!; echo $? > exit-status' &> /dev/null &\n"
 					command += "sleep 1\n"
 					command += "cat pidfile"
 
@@ -182,7 +182,7 @@ func (r *Resource) Handle() {
 				if server.WorkingDirectory != "" {
 					command += "cd " + server.WorkingDirectory + "\n"
 				}
-				command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.ID-job.Instances[0].ID))
+				command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.NumberInSequence(job)))
 				command += fmt.Sprintf("bash -c 'while [[ ( -d /proc/%d ) && ( -z `grep zombie /proc/%d/status` ) ]]; do sleep 1; done; sleep 1; cat exit-status'", jobInstance.PID, jobInstance.PID)
 
 				output, err := session.CombinedOutput(command)

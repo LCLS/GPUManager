@@ -32,6 +32,11 @@ type JobInstance struct {
 	Completed bool
 }
 
+// Finds which job out of the maximum number this instance is
+func (i *JobInstance) NumberInSequence(j *Job) int {
+	return i.ID - j.Instances[0].ID
+}
+
 var Jobs []Job
 
 func FindJob(id int, jobs []Job) *Job {
