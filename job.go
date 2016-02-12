@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 	"text/template"
@@ -155,7 +154,6 @@ func jobAddHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println(model_id)
 	var model string
 	if err := DB.QueryRow("SELECT name FROM model WHERE id = ?", model_id).Scan(&model); err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Model Name Find: " + err.Error()})
@@ -192,7 +190,9 @@ func jobAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for i := 0; i < len(job.Instances); i++ {
-		JobQueue.Enqueue(job.Instances[i])
+		go func(i *JobInstance) {
+			JobQueue <- i
+		}(&job.Instances[i])
 	}
 
 	Jobs = append(Jobs, job)

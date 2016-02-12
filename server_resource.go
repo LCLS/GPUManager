@@ -46,14 +46,13 @@ func (r *Resource) Handle() {
 			}
 
 			if !r.InUse {
-				instance := JobQueue.Dequeue()
-				if instance == nil {
+				jobInstance := <-JobQueue
+				if jobInstance == nil {
 					time.Sleep(1 * time.Second)
 					continue
 				}
 				r.InUse = true
 
-				jobInstance := instance.(JobInstance)
 				job := FindJob(jobInstance.JobID, Jobs)
 
 				log.Println(r.UUID, jobInstance)

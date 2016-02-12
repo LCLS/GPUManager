@@ -8,11 +8,10 @@ import (
 	"net/http"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/oleiade/lane"
 )
 
 var DB *sql.DB
-var JobQueue *lane.Queue
+var JobQueue chan *JobInstance
 
 func main() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
@@ -25,7 +24,7 @@ func main() {
 		log.Fatalln("[Database] Error:", err)
 	}
 
-	JobQueue = lane.NewQueue()
+	JobQueue = make(chan *JobInstance)
 
 	http.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("./js/"))))
 	http.Handle("/fonts/", http.StripPrefix("/fonts/", http.FileServer(http.Dir("./fonts/"))))
@@ -79,7 +78,9 @@ func main() {
 	for _, job := range Jobs {
 		for i := 0; i < len(job.Instances); i++ {
 			if !job.Instances[i].Completed {
-				JobQueue.Enqueue(job.Instances[i])
+				go func(i *JobInstance) {
+					JobQueue <- i
+				}(&job.Instances[i])
 			}
 		}
 	}
