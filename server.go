@@ -158,7 +158,7 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 	session.Close()
 	client.Close()
 
-	server := Server{URL: r.FormValue("server_name"), WorkingDirectory: r.FormValue("root"), Enabled: true}
+	server := Server{URL: r.FormValue("server_name"), Username: r.FormValue("user_name"), Password: r.FormValue("password"), WorkingDirectory: r.FormValue("root"), Enabled: true}
 
 	res, err := DB.Exec("insert into server(url, wdir, username, password) values (?,?,?,?)", server.URL, server.WorkingDirectory, r.FormValue("user_name"), r.FormValue("password"))
 	if err != nil {
