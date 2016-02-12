@@ -12,6 +12,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -37,6 +38,7 @@ func (r *Resource) Handle() {
 	for {
 		if !server.Enabled {
 			client = nil
+			time.Sleep(1 * time.Second)
 		} else {
 			if client == nil {
 				client, err = ssh.Dial("tcp", server.URL+":22", config)
@@ -55,52 +57,39 @@ func (r *Resource) Handle() {
 
 				job := FindJob(jobInstance.JobID, Jobs)
 
-				log.Println(r.UUID, jobInstance)
+				time.Sleep(time.Duration(rand.Int31n(10)) * time.Second)
+				log.Println(fmt.Sprintf("%s[%d]", server.URL, r.DeviceID), jobInstance)
 
 				if jobInstance.PID == -1 {
 					// Send Model Data
-					log.Println(r.UUID, "Uploading Model")
-					session, err := client.NewSession()
+					log.Println(fmt.Sprintf("%s[%d]", server.URL, r.DeviceID), "Uploading Model")
+					sftp, err := sftp.NewClient(client)
 					if err != nil {
-						log.Fatalln(err)
+						log.Fatal(err)
 					}
 
-					go func() {
-						w, _ := session.StdinPipe()
-						fmt.Fprintln(w, "D0755", 0, "model")
-						fmt.Fprintln(w, "D0755", 0, strings.ToLower(job.Model.Name))
-						for _, file := range job.Model.Files {
-							fIn, err := os.Open(fmt.Sprintf("data/%s/%s", job.Model.Name, file))
-							if err != nil {
-								log.Fatalln(err)
-							}
+					sftp.Mkdir(sftp.Join(server.WorkingDirectory, "model"))
+					sftp.Mkdir(sftp.Join(server.WorkingDirectory, "model", strings.ToLower(job.Model.Name)))
 
-							fStat, err := fIn.Stat()
-							if err != nil {
-								log.Fatalln(err)
-							}
+					for _, file := range job.Model.Files {
+						fIn, err := os.Open(fmt.Sprintf("data/%s/%s", job.Model.Name, file))
+						if err != nil {
+							log.Fatalln(err)
+						}
+						defer fIn.Close()
 
-							fmt.Fprintln(w, "C0644", fStat.Size(), file)
-							io.Copy(w, fIn)
-							fmt.Fprint(w, "\x00")
+						fOut, err := sftp.Create(sftp.Join(server.WorkingDirectory, "model", strings.ToLower(job.Model.Name), file))
+						if err != nil {
+							log.Fatalln(err)
 						}
-						w.Close()
-					}()
+						defer fIn.Close()
 
-					if server.WorkingDirectory != "" {
-						if output, err := session.CombinedOutput("scp -tr " + server.WorkingDirectory); err != nil {
-							log.Fatalln(string(output), err)
-						}
-					} else {
-						if output, err := session.CombinedOutput("scp -tr ./"); err != nil {
-							log.Fatalln(string(output), err)
-						}
+						io.Copy(fOut, fIn)
 					}
-					session.Close()
 
 					time.Sleep(1 * time.Second)
 					// Update Template
-					log.Println(r.UUID, "Uploading Template")
+					log.Println(fmt.Sprintf("%s[%d]", server.URL, r.DeviceID), "Uploading Template")
 					type TemplateData struct {
 						Input, Output  string
 						Seed, DeviceID int
@@ -129,37 +118,23 @@ func (r *Resource) Handle() {
 
 					time.Sleep(1 * time.Second)
 					// Send Template Data
-					session, err = client.NewSession()
+					sftp.Mkdir(sftp.Join(server.WorkingDirectory, "job"))
+					sftp.Mkdir(sftp.Join(server.WorkingDirectory, "job", strings.ToLower(job.Name)))
+					sftp.Mkdir(sftp.Join(server.WorkingDirectory, "job", strings.ToLower(job.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.ID-job.Instances[0].ID))))
+
+					fOut, err := sftp.Create(sftp.Join(server.WorkingDirectory, "job", strings.ToLower(job.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.ID-job.Instances[0].ID)), "sim.conf"))
 					if err != nil {
 						log.Fatalln(err)
 					}
+					fOut.Write(templateData.Bytes())
+					fOut.Close()
 
-					go func() {
-						w, _ := session.StdinPipe()
-						fmt.Fprintln(w, "D0755", 0, "job")
-						fmt.Fprintln(w, "D0755", 0, strings.ToLower(job.Name))
-						fmt.Fprintln(w, "D0755", 0, strings.ToLower(fmt.Sprintf("%d", jobInstance.ID-job.Instances[0].ID)))
-						fmt.Fprintln(w, "C0644", templateData.Len(), "sim.conf")
-						w.Write(templateData.Bytes())
-						fmt.Fprint(w, "\x00")
-						w.Close()
-					}()
-
-					if server.WorkingDirectory != "" {
-						if output, err := session.CombinedOutput("scp -tr " + server.WorkingDirectory); err != nil {
-							log.Fatalln(string(output), err)
-						}
-					} else {
-						if output, err := session.CombinedOutput("scp -tr ./"); err != nil {
-							log.Fatalln(string(output), err)
-						}
-					}
-					session.Close()
+					sftp.Close()
 
 					time.Sleep(1 * time.Second)
 					// Start job and retrieve PID
-					log.Println(r.UUID, "Starting Job")
-					session, err = client.NewSession()
+					log.Println(fmt.Sprintf("%s[%d]", server.URL, r.DeviceID), "Starting Job")
+					session, err := client.NewSession()
 					if err != nil {
 						log.Fatalln(err)
 					}
@@ -180,12 +155,14 @@ func (r *Resource) Handle() {
 					}
 					session.Close()
 
+					log.Println(fmt.Sprintf("%s[%d]", server.URL, r.DeviceID), string(sPID))
+
 					// Parse PID
 					pid, err := strconv.Atoi(strings.TrimSpace(string(sPID)))
 					if err != nil {
 						log.Fatalln(err)
 					}
-					log.Println(r.UUID, "PID:", pid)
+					log.Println(fmt.Sprintf("%s[%d]", server.URL, r.DeviceID), "PID:", pid)
 
 					jobInstance.PID = pid
 					if _, err := DB.Exec("update job_instance set pid = ? where id = ?", jobInstance.PID, jobInstance.ID); err != nil {
@@ -195,7 +172,7 @@ func (r *Resource) Handle() {
 
 				time.Sleep(1 * time.Second)
 				// Wait for completion
-				log.Println(r.UUID, "Waiting for completion")
+				log.Println(fmt.Sprintf("%s[%d]", server.URL, r.DeviceID), "Waiting for completion")
 				session, err := client.NewSession()
 				if err != nil {
 					log.Fatalln(err)
@@ -217,7 +194,7 @@ func (r *Resource) Handle() {
 				if err != nil {
 					log.Fatalln(err)
 				}
-				log.Println(r.UUID, "Exit Code:", exitcode)
+				log.Println(fmt.Sprintf("%s[%d]", server.URL, r.DeviceID), "Exit Code:", exitcode)
 
 				jobInstance.Completed = true
 				if _, err := DB.Exec("update job_instance set completed = ? where id = ?", jobInstance.Completed, jobInstance.ID); err != nil {
