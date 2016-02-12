@@ -15,10 +15,10 @@ import (
 )
 
 type Resource struct {
-	ServerID, DeviceID int
-	InUse              bool
-	Name, UUID         string
-	Parent             *Server
+	DeviceID   int
+	InUse      bool
+	Name, UUID string
+	Parent     *Server
 
 	client *ssh.Client
 }

@@ -69,7 +69,7 @@ func LoadServers(db *sql.DB) ([]Server, error) {
 				return nil, err
 			}
 
-			servers[i].Resources = append(servers[i].Resources, Resource{Name: name, UUID: uuid, InUse: inuse, ServerID: servers[i].ID, DeviceID: device_id, Parent: &servers[i]})
+			servers[i].Resources = append(servers[i].Resources, Resource{Name: name, UUID: uuid, InUse: inuse, DeviceID: device_id, Parent: &servers[i]})
 		}
 		rows.Close()
 	}
@@ -183,7 +183,7 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 	for scanner.Scan() {
 		result := re.FindAllStringSubmatch(scanner.Text(), -1)
 		if len(result) == 1 && len(result[0]) == 3 {
-			res := Resource{Name: result[0][1], UUID: result[0][2], InUse: false, ServerID: server.ID, DeviceID: device}
+			res := Resource{Name: result[0][1], UUID: result[0][2], InUse: false, Parent: &server, DeviceID: device}
 			server.Resources = append(server.Resources, res)
 
 			if _, err := DB.Exec("insert into server_resource(uuid, name, inuse, device, server_id) values (?,?,?,?,?)", res.UUID, res.Name, res.InUse, device, id); err != nil {
