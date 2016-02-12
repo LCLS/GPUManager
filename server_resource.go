@@ -185,7 +185,7 @@ func (r *Resource) Handle() {
 					if err != nil {
 						log.Fatalln(err)
 					}
-					log.Println("PID:", pid)
+					log.Println(r.UUID, "PID:", pid)
 
 					jobInstance.PID = pid
 					if _, err := DB.Exec("update job_instance set pid = ? where id = ?", jobInstance.PID, jobInstance.ID); err != nil {
@@ -217,7 +217,7 @@ func (r *Resource) Handle() {
 				if err != nil {
 					log.Fatalln(err)
 				}
-				log.Println("Exit Code:", exitcode)
+				log.Println(r.UUID, "Exit Code:", exitcode)
 
 				jobInstance.Completed = true
 				if _, err := DB.Exec("update job_instance set completed = ? where id = ?", jobInstance.Completed, jobInstance.ID); err != nil {

@@ -185,7 +185,6 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 		if len(result) == 1 && len(result[0]) == 3 {
 			res := Resource{Name: result[0][1], UUID: result[0][2], InUse: false, ServerID: server.ID, DeviceID: device}
 			server.Resources = append(server.Resources, res)
-			go res.Handle()
 
 			if _, err := DB.Exec("insert into server_resource(uuid, name, inuse, device, server_id) values (?,?,?,?,?)", res.UUID, res.Name, res.InUse, device, id); err != nil {
 				json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
@@ -197,6 +196,9 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 	}
 
 	Servers = append(Servers, server)
+	for i := 0; i < len(server.Resources); i++ {
+		go server.Resources[i].Handle()
+	}
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: string(result), Server: ServerResponse{server.ID, server.WorkingDirectory, server.URL, len(server.Resources)}})
 }
 
