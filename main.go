@@ -24,8 +24,6 @@ func main() {
 		log.Fatalln("[Database] Error:", err)
 	}
 
-	JobQueue = make(chan *JobInstance)
-
 	http.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("./js/"))))
 	http.Handle("/fonts/", http.StripPrefix("/fonts/", http.FileServer(http.Dir("./fonts/"))))
 	http.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("./css/"))))
@@ -53,6 +51,12 @@ func main() {
 		log.Fatalln(err)
 	}
 	Servers = servers
+
+	resources := 0
+	for _, server := range servers {
+		resources += len(server.Resources)
+	}
+	JobQueue = make(chan *JobInstance, resources*2)
 
 	// Load Models
 	models, err := LoadModels(DB)
