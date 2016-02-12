@@ -71,8 +71,6 @@ func (r *Resource) Handle() {
 		}
 		r.InUse = true
 
-		job := FindJob(jobInstance.JobID, Jobs)
-
 		time.Sleep(time.Duration(rand.Int31n(10)) * time.Second)
 		Log.Println(jobInstance)
 
@@ -85,16 +83,16 @@ func (r *Resource) Handle() {
 			}
 
 			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "model"))
-			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "model", strings.ToLower(job.Model.Name)))
+			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "model", strings.ToLower(jobInstance.Parent.Model.Name)))
 
-			for _, file := range job.Model.Files {
-				fIn, err := os.Open(fmt.Sprintf("data/%s/%s", job.Model.Name, file))
+			for _, file := range jobInstance.Parent.Model.Files {
+				fIn, err := os.Open(fmt.Sprintf("data/%s/%s", jobInstance.Parent.Model.Name, file))
 				if err != nil {
 					Log.Fatalln(err)
 				}
 				defer fIn.Close()
 
-				fOut, err := sftp.Create(sftp.Join(r.Parent.WorkingDirectory, "model", strings.ToLower(job.Model.Name), file))
+				fOut, err := sftp.Create(sftp.Join(r.Parent.WorkingDirectory, "model", strings.ToLower(jobInstance.Parent.Model.Name), file))
 				if err != nil {
 					Log.Fatalln(err)
 				}
@@ -105,16 +103,16 @@ func (r *Resource) Handle() {
 
 			time.Sleep(1 * time.Second)
 			// Send Template Data
-			template, err := job.Template.Process(r.DeviceID, *job)
+			template, err := jobInstance.Parent.Template.Process(r.DeviceID, *jobInstance.Parent)
 			if err != nil {
 				Log.Fatalln(err)
 			}
 
 			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "job"))
-			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(job.Name)))
-			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(job.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence(job)))))
+			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(jobInstance.Parent.Name)))
+			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(jobInstance.Parent.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence()))))
 
-			fOut, err := sftp.Create(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(job.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence(job))), "sim.conf"))
+			fOut, err := sftp.Create(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(jobInstance.Parent.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence())), "sim.conf"))
 			if err != nil {
 				Log.Fatalln(err)
 			}
@@ -136,7 +134,7 @@ func (r *Resource) Handle() {
 			if r.Parent.WorkingDirectory != "" {
 				command += "cd " + r.Parent.WorkingDirectory + "\n"
 			}
-			command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.NumberInSequence(job)))
+			command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", jobInstance.Parent.Name, jobInstance.NumberInSequence()))
 			command += "bash -c 'ProtoMol sim.conf &> Log.txt & echo $! > pidfile; wait $!; echo $? > exit-status' &> /dev/null &\n"
 			command += "sleep 1\n"
 			command += "cat pidfile"
@@ -174,7 +172,7 @@ func (r *Resource) Handle() {
 		if r.Parent.WorkingDirectory != "" {
 			command += "cd " + r.Parent.WorkingDirectory + "\n"
 		}
-		command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.NumberInSequence(job)))
+		command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", jobInstance.Parent.Name, jobInstance.NumberInSequence()))
 		command += fmt.Sprintf("bash -c 'while [[ ( -d /proc/%d ) && ( -z `grep zombie /proc/%d/status` ) ]]; do sleep 1; done; sleep 1; cat exit-status'", jobInstance.PID, jobInstance.PID)
 
 		output, err := session.CombinedOutput(command)

@@ -27,14 +27,14 @@ func (j *Job) Complete() int {
 }
 
 type JobInstance struct {
-	ID, JobID int
-	PID       int
+	ID, PID   int
 	Completed bool
+	Parent    *Job
 }
 
 // Finds which job out of the maximum number this instance is
-func (i *JobInstance) NumberInSequence(j *Job) int {
-	return i.ID - j.Instances[0].ID
+func (i *JobInstance) NumberInSequence() int {
+	return i.ID - i.Parent.Instances[0].ID
 }
 
 var Jobs []Job
@@ -70,14 +70,14 @@ func LoadJobs(db *sql.DB) ([]Job, error) {
 	rows.Close()
 
 	for i := 0; i < len(jobs); i++ {
-		rows, err := DB.Query("SELECT id, completed, job_id, pid FROM job_instance WHERE job_id = ?", jobs[i].ID)
+		rows, err := DB.Query("SELECT id, completed, pid FROM job_instance WHERE job_id = ?", jobs[i].ID)
 		if err != nil {
 			return nil, err
 		}
 
 		for rows.Next() {
-			var instance JobInstance
-			if err := rows.Scan(&instance.ID, &instance.Completed, &instance.JobID, &instance.PID); err != nil {
+			instance := JobInstance{Parent: &jobs[i]}
+			if err := rows.Scan(&instance.ID, &instance.Completed, &instance.PID); err != nil {
 				return nil, err
 			}
 			jobs[i].Instances = append(jobs[i].Instances, instance)
@@ -192,7 +192,7 @@ func jobAddHandler(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 			return
 		}
-		job.Instances = append(job.Instances, JobInstance{ID: int(iid), Completed: false, JobID: int(id), PID: -1})
+		job.Instances = append(job.Instances, JobInstance{ID: int(iid), Completed: false, Parent: &job, PID: -1})
 	}
 
 	Jobs = append(Jobs, job)
