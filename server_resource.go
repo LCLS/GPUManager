@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -45,138 +46,185 @@ func (r *Resource) Handle() {
 			}
 
 			if !r.InUse {
-				jobInstance := JobQueue.Pop().(JobInstance)
+				instance := JobQueue.Dequeue()
+				if instance == nil {
+					time.Sleep(1 * time.Second)
+					continue
+				}
+				r.InUse = true
+
+				jobInstance := instance.(JobInstance)
 				job := FindJob(jobInstance.JobID, Jobs)
 
-				// Send Model Data
+				log.Println(r.UUID, jobInstance)
+
+				if jobInstance.PID == -1 {
+					// Send Model Data
+					log.Println(r.UUID, "Uploading Model")
+					session, err := client.NewSession()
+					if err != nil {
+						log.Fatalln(err)
+					}
+
+					go func() {
+						w, _ := session.StdinPipe()
+						fmt.Fprintln(w, "D0755", 0, "model")
+						fmt.Fprintln(w, "D0755", 0, strings.ToLower(job.Model.Name))
+						for _, file := range job.Model.Files {
+							fIn, err := os.Open(fmt.Sprintf("data/%s/%s", job.Model.Name, file))
+							if err != nil {
+								log.Fatalln(err)
+							}
+
+							fStat, err := fIn.Stat()
+							if err != nil {
+								log.Fatalln(err)
+							}
+
+							fmt.Fprintln(w, "C0644", fStat.Size(), file)
+							io.Copy(w, fIn)
+							fmt.Fprint(w, "\x00")
+						}
+						w.Close()
+					}()
+
+					if server.WorkingDirectory != "" {
+						if output, err := session.CombinedOutput("scp -tr " + server.WorkingDirectory); err != nil {
+							log.Fatalln(string(output), err)
+						}
+					} else {
+						if output, err := session.CombinedOutput("scp -tr ./"); err != nil {
+							log.Fatalln(string(output), err)
+						}
+					}
+					session.Close()
+
+					time.Sleep(1 * time.Second)
+					// Update Template
+					log.Println(r.UUID, "Uploading Template")
+					type TemplateData struct {
+						Input, Output  string
+						Seed, DeviceID int
+					}
+
+					data := TemplateData{Seed: rand.Int()}
+					data.DeviceID = r.DeviceID
+					data.Output = fmt.Sprintf("sim.%d.dcd", data.Seed)
+					for _, file := range job.Model.Files {
+						parts := strings.Split(strings.ToLower(file), ".")
+						if parts[len(parts)-1] == "tpr" {
+							data.Input = strings.ToLower(fmt.Sprintf("gromacstprfile ../../../model/%s/%s", job.Model.Name, file))
+							break
+						}
+					}
+
+					temp, err := template.New(strings.Split(job.Template.File, "/")[1]).ParseFiles(job.Template.File)
+					if err != nil {
+						log.Fatalln(err)
+					}
+
+					var templateData bytes.Buffer
+					if err := temp.Execute(&templateData, data); err != nil {
+						log.Fatalln(err)
+					}
+
+					time.Sleep(1 * time.Second)
+					// Send Template Data
+					session, err = client.NewSession()
+					if err != nil {
+						log.Fatalln(err)
+					}
+
+					go func() {
+						w, _ := session.StdinPipe()
+						fmt.Fprintln(w, "D0755", 0, "job")
+						fmt.Fprintln(w, "D0755", 0, strings.ToLower(job.Name))
+						fmt.Fprintln(w, "D0755", 0, strings.ToLower(fmt.Sprintf("%d", jobInstance.ID-job.Instances[0].ID)))
+						fmt.Fprintln(w, "C0644", templateData.Len(), "sim.conf")
+						w.Write(templateData.Bytes())
+						fmt.Fprint(w, "\x00")
+						w.Close()
+					}()
+
+					if server.WorkingDirectory != "" {
+						if output, err := session.CombinedOutput("scp -tr " + server.WorkingDirectory); err != nil {
+							log.Fatalln(string(output), err)
+						}
+					} else {
+						if output, err := session.CombinedOutput("scp -tr ./"); err != nil {
+							log.Fatalln(string(output), err)
+						}
+					}
+					session.Close()
+
+					time.Sleep(1 * time.Second)
+					// Start job and retrieve PID
+					log.Println(r.UUID, "Starting Job")
+					session, err = client.NewSession()
+					if err != nil {
+						log.Fatalln(err)
+					}
+
+					command := "/bin/bash\n"
+					command += "source ~/.bash_profile\n"
+					if server.WorkingDirectory != "" {
+						command += "cd " + server.WorkingDirectory + "\n"
+					}
+					command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.ID-job.Instances[0].ID))
+					command += "bash -c 'ProtoMol sim.conf &> log.txt & echo $! > pidfile; wait $!; echo $? > exit-status' &> /dev/null &\n"
+					command += "sleep 1\n"
+					command += "cat pidfile"
+
+					sPID, err := session.CombinedOutput(command)
+					if err != nil {
+						log.Fatalln(string(sPID), err)
+					}
+					session.Close()
+
+					// Parse PID
+					pid, err := strconv.Atoi(strings.TrimSpace(string(sPID)))
+					if err != nil {
+						log.Fatalln(err)
+					}
+					log.Println("PID:", pid)
+
+					jobInstance.PID = pid
+					if _, err := DB.Exec("update job_instance set pid = ? where id = ?", jobInstance.PID, jobInstance.ID); err != nil {
+						log.Fatalln(err)
+					}
+				}
+
+				time.Sleep(1 * time.Second)
+				// Wait for completion
+				log.Println(r.UUID, "Waiting for completion")
 				session, err := client.NewSession()
 				if err != nil {
 					log.Fatalln(err)
 				}
 
-				go func() {
-					w, _ := session.StdinPipe()
-					fmt.Fprintln(w, "D0755", 0, "model")
-					fmt.Fprintln(w, "D0755", 0, strings.ToLower(job.Model.Name))
-					for _, file := range job.Model.Files {
-						fIn, err := os.Open(fmt.Sprintf("data/%s/%s", job.Model.Name, file))
-						if err != nil {
-							log.Fatalln(err)
-						}
-
-						fStat, err := fIn.Stat()
-						if err != nil {
-							log.Fatalln(err)
-						}
-
-						fmt.Fprintln(w, "C0644", fStat.Size(), file)
-						io.Copy(w, fIn)
-						fmt.Fprint(w, "\x00")
-					}
-					w.Close()
-				}()
-
-				if server.WorkingDirectory != "" {
-					if err := session.Run("scp -tr " + server.WorkingDirectory); err != nil {
-						log.Fatalln(err)
-					}
-				} else {
-					if err := session.Run("scp -tr ./"); err != nil {
-						log.Fatalln(err)
-					}
-				}
-				session.Close()
-
-				// Update Template
-				type TemplateData struct {
-					Input, Output  string
-					Seed, DeviceID int
-				}
-
-				data := TemplateData{Seed: rand.Int()}
-				data.DeviceID = r.DeviceID
-				data.Output = fmt.Sprintf("sim.%d.dcd", data.Seed)
-				for _, file := range job.Model.Files {
-					parts := strings.Split(strings.ToLower(file), ".")
-					if parts[len(parts)-1] == "tpr" {
-						data.Input = strings.ToLower(fmt.Sprintf("gromacstprfile ../../../model/%s/%s", job.Model.Name, file))
-						break
-					}
-				}
-
-				temp, err := template.New(strings.Split(job.Template.File, "/")[1]).ParseFiles(job.Template.File)
-				if err != nil {
-					log.Fatalln(err)
-				}
-
-				var templateData bytes.Buffer
-				if err := temp.Execute(&templateData, data); err != nil {
-					log.Fatalln(err)
-				}
-
-				// Send Template Data
-				session, err = client.NewSession()
-				if err != nil {
-					log.Fatalln(err)
-				}
-
-				go func() {
-					w, _ := session.StdinPipe()
-					fmt.Fprintln(w, "D0755", 0, "job")
-					fmt.Fprintln(w, "D0755", 0, strings.ToLower(job.Name))
-					fmt.Fprintln(w, "D0755", 0, strings.ToLower(fmt.Sprintf("%d", jobInstance.ID-job.Instances[0].ID)))
-					fmt.Fprintln(w, "C0644", templateData.Len(), "sim.conf")
-					w.Write(templateData.Bytes())
-					fmt.Fprint(w, "\x00")
-					w.Close()
-				}()
-
-				if server.WorkingDirectory != "" {
-					if err := session.Run("scp -tr " + server.WorkingDirectory); err != nil {
-						log.Fatalln(err)
-					}
-				} else {
-					if err := session.Run("scp -tr ./"); err != nil {
-						log.Fatalln(err)
-					}
-				}
-				session.Close()
-
-				r.InUse = true
-
-				// Start job and retrieve PID
-				session, err = client.NewSession()
-				if err != nil {
-					log.Fatalln(err)
-				}
-
-				command := "/bin/bash\n"
-				command += "source ~/.bash_profile\n"
+				command := ""
 				if server.WorkingDirectory != "" {
 					command += "cd " + server.WorkingDirectory + "\n"
 				}
 				command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", job.Name, jobInstance.ID-job.Instances[0].ID))
-				command += "bash -c 'ProtoMol sim.conf &> log.txt & echo $! > pidfile; wait $!; echo $? > exit-status' &> /dev/null &\n"
-				command += "cat pidfile"
+				command += fmt.Sprintf("bash -c 'while [[ ( -d /proc/%d ) && ( -z `grep zombie /proc/%d/status` ) ]]; do sleep 1; done; sleep 1; cat exit-status'", jobInstance.PID, jobInstance.PID)
 
-				sPID, err := session.CombinedOutput(command)
+				output, err := session.CombinedOutput(command)
+				if err != nil {
+					log.Fatalln(string(output), err)
+				}
+
+				exitcode, err := strconv.Atoi(strings.TrimSpace(string(output)))
 				if err != nil {
 					log.Fatalln(err)
 				}
+				log.Println("Exit Code:", exitcode)
 
-				// Parse PID
-				pid, err := strconv.Atoi(strings.TrimSpace(string(sPID)))
-				if err != nil {
+				jobInstance.Completed = true
+				if _, err := DB.Exec("update job_instance set completed = ? where id = ?", jobInstance.Completed, jobInstance.ID); err != nil {
 					log.Fatalln(err)
 				}
-				log.Println(pid)
-
-				log.Println("Loop")
-				for {
-
-				}
-
-				session.Close()
+				r.InUse = false
 			}
 		}
 	}

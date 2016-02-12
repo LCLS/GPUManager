@@ -66,14 +66,14 @@ func LoadJobs(db *sql.DB) ([]Job, error) {
 	rows.Close()
 
 	for i := 0; i < len(jobs); i++ {
-		rows, err := DB.Query("SELECT id, completed, job_id FROM job_instance WHERE job_id = ?", jobs[i].ID)
+		rows, err := DB.Query("SELECT id, completed, job_id, pid FROM job_instance WHERE job_id = ?", jobs[i].ID)
 		if err != nil {
 			return nil, err
 		}
 
 		for rows.Next() {
 			var instance JobInstance
-			if err := rows.Scan(&instance.ID, &instance.Completed, &instance.JobID); err != nil {
+			if err := rows.Scan(&instance.ID, &instance.Completed, &instance.JobID, &instance.PID); err != nil {
 				return nil, err
 			}
 			jobs[i].Instances = append(jobs[i].Instances, instance)
@@ -96,6 +96,9 @@ func jobHandler(w http.ResponseWriter, r *http.Request) {
 		},
 		"complete": func(in Job) int {
 			return in.Complete()
+		},
+		"percent": func(in Job) float32 {
+			return float32((float64(in.Complete()) / float64(len(in.Instances))) * 100.0)
 		},
 	}
 
@@ -189,11 +192,36 @@ func jobAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for i := 0; i < len(job.Instances); i++ {
-		if !job.Instances[i].Completed {
-			JobQueue.Enqueue(job.Instances[i])
-		}
+		JobQueue.Enqueue(job.Instances[i])
 	}
 
 	Jobs = append(Jobs, job)
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: "", Job: job})
+}
+
+func jobRemoveHandler(w http.ResponseWriter, r *http.Request) {
+	type JSONResponse struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	id := r.FormValue("id")
+	if id == "" {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: "Missing Data"})
+		return
+	}
+
+	if _, err := DB.Exec("DELETE FROM job_instance WHERE job_id = ?", id); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	if _, err := DB.Exec("DELETE FROM job WHERE id = ?", id); err != nil {
+		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(JSONResponse{Success: true})
 }

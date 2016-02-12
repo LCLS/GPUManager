@@ -38,6 +38,7 @@ func main() {
 
 	http.HandleFunc("/job", jobHandler)
 	http.HandleFunc("/job/add", jobAddHandler)
+	http.HandleFunc("/job/remove", jobRemoveHandler)
 
 	http.HandleFunc("/model", modelHandler)
 	http.HandleFunc("/model/add", modelAddHandler)
