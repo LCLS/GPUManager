@@ -187,12 +187,12 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 			server.Resources = append(server.Resources, res)
 			go res.Handle()
 
-			device += 1
-
-			if _, err := DB.Exec("insert into server_resource(uuid, name, inuse, device_id, server_id) values (?,?,?,?,?)", res.UUID, res.Name, res.InUse, device, id); err != nil {
+			if _, err := DB.Exec("insert into server_resource(uuid, name, inuse, device, server_id) values (?,?,?,?,?)", res.UUID, res.Name, res.InUse, device, id); err != nil {
 				json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 				return
 			}
+
+			device += 1
 		}
 	}
 
