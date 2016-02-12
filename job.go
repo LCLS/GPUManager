@@ -176,7 +176,8 @@ func jobAddHandler(w http.ResponseWriter, r *http.Request) {
 	job.ID = int(id)
 
 	for i := 0; i < count; i++ {
-		if _, err := DB.Exec("insert into job_instance(job_id) values (?)", id); err != nil {
+		res, err := DB.Exec("insert into job_instance(job_id) values (?)", id)
+		if err != nil {
 			json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: err.Error()})
 			return
 		}
