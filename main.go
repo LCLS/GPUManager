@@ -89,11 +89,11 @@ func main() {
 		}
 	}
 
-	for _, server := range Servers {
-		server.Connect()
-		for i := 0; i < len(server.Resources); i++ {
-			log.Println(server.URL, server.Resources[i])
-			go server.Resources[i].Handle()
+	for i := 0; i < len(Servers); i++ {
+		Servers[i].Connect()
+		for j := 0; j < len(Servers[i].Resources); j++ {
+			log.Println(Servers[i].URL, Servers[i].Resources[j])
+			go Servers[i].Resources[j].Handle()
 		}
 	}
 
