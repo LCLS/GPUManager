@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
 )
 
 type Resource struct {
@@ -19,35 +18,6 @@ type Resource struct {
 	InUse      bool
 	Name, UUID string
 	Parent     *Server
-
-	client *ssh.Client
-}
-
-func (r *Resource) Connect() error {
-	if r.client == nil {
-		config := &ssh.ClientConfig{
-			User: r.Parent.Username,
-			Auth: []ssh.AuthMethod{
-				ssh.Password(r.Parent.Password),
-			},
-		}
-
-		var err error
-		if r.client, err = ssh.Dial("tcp", r.Parent.URL+":22", config); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (r *Resource) Disconnect() error {
-	if r.client == nil {
-		return nil
-	}
-	err := r.client.Close()
-	r.client = nil
-	return err
 }
 
 func (r *Resource) Handle() {
@@ -55,20 +25,14 @@ func (r *Resource) Handle() {
 
 	for {
 		time.Sleep(1 * time.Second)
-		if !r.Parent.Enabled {
-			r.Disconnect()
-			continue
-		}
-		r.Connect()
 
-		if r.InUse {
+		if !r.Parent.Enabled || r.InUse {
 			continue
 		}
+
+		// Get Job
 		jobInstance := <-JobQueue
-		if jobInstance == nil {
-			time.Sleep(1 * time.Second)
-			continue
-		}
+
 		r.InUse = true
 
 		time.Sleep(time.Duration(rand.Int31n(10)) * time.Second)
@@ -77,7 +41,7 @@ func (r *Resource) Handle() {
 		if jobInstance.PID == -1 {
 			// Send Model Data
 			Log.Println("Uploading Model")
-			sftp, err := sftp.NewClient(r.client)
+			sftp, err := sftp.NewClient(r.Parent.Client)
 			if err != nil {
 				Log.Fatal(err)
 			}
@@ -124,7 +88,7 @@ func (r *Resource) Handle() {
 			time.Sleep(1 * time.Second)
 			// Start job and retrieve PID
 			Log.Println("Starting Job")
-			session, err := r.client.NewSession()
+			session, err := r.Parent.Client.NewSession()
 			if err != nil {
 				Log.Fatalln(err)
 			}
@@ -145,8 +109,6 @@ func (r *Resource) Handle() {
 			}
 			session.Close()
 
-			Log.Println(string(sPID))
-
 			// Parse PID
 			pid, err := strconv.Atoi(strings.TrimSpace(string(sPID)))
 			if err != nil {
@@ -163,7 +125,7 @@ func (r *Resource) Handle() {
 		time.Sleep(1 * time.Second)
 		// Wait for completion
 		Log.Println("Waiting for completion")
-		session, err := r.client.NewSession()
+		session, err := r.Parent.Client.NewSession()
 		if err != nil {
 			Log.Fatalln(err)
 		}

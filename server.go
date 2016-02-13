@@ -20,6 +20,28 @@ type Server struct {
 	Username, Password    string
 	Enabled               bool
 	Resources             []Resource
+
+	Client *ssh.Client
+}
+
+func (s *Server) Connect() error {
+	config := &ssh.ClientConfig{
+		User: s.Username,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(s.Password),
+		},
+	}
+
+	var err error
+	if s.Client, err = ssh.Dial("tcp", s.URL+":22", config); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) Disconnect() {
+	s.Client.Close()
+	s.Client = nil
 }
 
 var Servers []Server

@@ -90,6 +90,7 @@ func main() {
 	}
 
 	for _, server := range Servers {
+		server.Connect()
 		for i := 0; i < len(server.Resources); i++ {
 			log.Println(server.URL, server.Resources[i])
 			go server.Resources[i].Handle()
