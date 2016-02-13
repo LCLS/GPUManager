@@ -56,7 +56,7 @@ func main() {
 	for _, server := range servers {
 		resources += len(server.Resources)
 	}
-	JobQueue = make(chan *JobInstance, resources*2)
+	JobQueue = make(chan *JobInstance, resources)
 
 	// Load Models
 	models, err := LoadModels(DB)
