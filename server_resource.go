@@ -54,18 +54,18 @@ func (r *Resource) Handle() {
 				if err != nil {
 					Log.Fatalln(err)
 				}
-				defer fIn.Close()
 
 				fOut, err := sftp.Create(sftp.Join(r.Parent.WorkingDirectory, "model", strings.ToLower(jobInstance.Parent.Model.Name), file))
 				if err != nil {
 					Log.Fatalln(err)
 				}
-				defer fIn.Close()
 
 				io.Copy(fOut, fIn)
+
+				fIn.Close()
+				fIn.Close()
 			}
 
-			time.Sleep(1 * time.Second)
 			// Send Template Data
 			template, err := jobInstance.Parent.Template.Process(r.DeviceID, *jobInstance.Parent)
 			if err != nil {
@@ -85,7 +85,6 @@ func (r *Resource) Handle() {
 
 			sftp.Close()
 
-			time.Sleep(1 * time.Second)
 			// Start job and retrieve PID
 			Log.Println("Starting Job")
 			session, err := r.Parent.Client.NewSession()
@@ -122,7 +121,6 @@ func (r *Resource) Handle() {
 			}
 		}
 
-		time.Sleep(1 * time.Second)
 		// Wait for completion
 		Log.Println("Waiting for completion")
 		session, err := r.Parent.Client.NewSession()
@@ -141,6 +139,7 @@ func (r *Resource) Handle() {
 		if err != nil {
 			Log.Fatalln(string(output), err)
 		}
+		session.Close()
 
 		exitcode, err := strconv.Atoi(strings.TrimSpace(string(output)))
 		if err != nil {
