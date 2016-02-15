@@ -79,15 +79,15 @@ func main() {
 	}
 	Jobs = jobs
 
-	for _, job := range Jobs {
-		for i := 0; i < len(job.Instances); i++ {
-			if !job.Instances[i].Completed {
-				go func(i *JobInstance) {
-					JobQueue <- i
-				}(&job.Instances[i])
+	go func() {
+		for _, job := range Jobs {
+			for i := 0; i < len(job.Instances); i++ {
+				if !job.Instances[i].Completed {
+					JobQueue <- &job.Instances[i]
+				}
 			}
 		}
-	}
+	}()
 
 	for i := 0; i < len(Servers); i++ {
 		Servers[i].Connect()
