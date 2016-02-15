@@ -83,7 +83,11 @@ func main() {
 		for _, job := range Jobs {
 			for i := 0; i < len(job.Instances); i++ {
 				if !job.Instances[i].Completed {
-					JobQueue <- &job.Instances[i]
+					if job.Instances[i].Resource == nil {
+						JobQueue <- &job.Instances[i]
+					} else {
+						job.Instances[i].Resource.JobQueue <- &job.Instances[i]
+					}
 				}
 			}
 		}

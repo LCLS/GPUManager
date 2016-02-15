@@ -70,16 +70,18 @@ func LoadJobs(db *sql.DB) ([]Job, error) {
 	rows.Close()
 
 	for i := 0; i < len(jobs); i++ {
-		rows, err := DB.Query("SELECT id, completed, pid FROM job_instance WHERE job_id = ?", jobs[i].ID)
+		rows, err := DB.Query("SELECT id, completed, pid, resource_id FROM job_instance WHERE job_id = ?", jobs[i].ID)
 		if err != nil {
 			return nil, err
 		}
 
 		for rows.Next() {
+			var res_id string
 			instance := JobInstance{Parent: &jobs[i]}
-			if err := rows.Scan(&instance.ID, &instance.Completed, &instance.PID); err != nil {
+			if err := rows.Scan(&instance.ID, &instance.Completed, &instance.PID, &res_id); err != nil {
 				return nil, err
 			}
+			instance.Resource = FindServerResource(res_id, Servers)
 			jobs[i].Instances = append(jobs[i].Instances, instance)
 		}
 		rows.Close()
@@ -196,11 +198,13 @@ func jobAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	Jobs = append(Jobs, job)
-	for i := 0; i < len(job.Instances); i++ {
-		go func(i *JobInstance) {
-			JobQueue <- i
-		}(&job.Instances[i])
-	}
+
+	go func(job *Job) {
+		for i := 0; i < len(job.Instances); i++ {
+			JobQueue <- &job.Instances[i]
+		}
+	}(&job)
+
 	json.NewEncoder(w).Encode(JSONResponse{Success: true, Message: "", Job: job})
 }
 

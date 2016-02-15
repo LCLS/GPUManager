@@ -18,6 +18,7 @@ type Resource struct {
 	InUse      bool
 	Name, UUID string
 	Parent     *Server
+	JobQueue   chan *JobInstance
 }
 
 func (r *Resource) Handle() {
@@ -31,8 +32,25 @@ func (r *Resource) Handle() {
 		}
 
 		// Get Job
-		jobInstance := <-JobQueue
+		var jobInstance *JobInstance = nil
+		select {
+		case r := <-r.JobQueue:
+			jobInstance = r
+		default:
 
+		}
+
+		if jobInstance == nil {
+			select {
+			case a := <-JobQueue:
+				jobInstance = a
+			default:
+			}
+		}
+
+		if jobInstance == nil {
+			continue
+		}
 		r.InUse = true
 
 		time.Sleep(time.Duration(rand.Int31n(10)) * time.Second)
@@ -98,7 +116,7 @@ func (r *Resource) Handle() {
 				command += "cd " + r.Parent.WorkingDirectory + "\n"
 			}
 			command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", jobInstance.Parent.Name, jobInstance.NumberInSequence()))
-			command += "bash -c 'ProtoMol sim.conf &> Log.txt & echo $! > pidfile; wait $!; echo $? > exit-status' &> /dev/null &\n"
+			command += "bash -c 'ProtoMol sim.conf &> log.txt & echo $! > pidfile; wait $!; echo $? > exit-status' &> /dev/null &\n"
 			command += "sleep 1\n"
 			command += "cat pidfile"
 
@@ -117,6 +135,10 @@ func (r *Resource) Handle() {
 
 			jobInstance.PID = pid
 			if _, err := DB.Exec("update job_instance set pid = ? where id = ?", jobInstance.PID, jobInstance.ID); err != nil {
+				Log.Fatalln(err)
+			}
+
+			if _, err := DB.Exec("update job_instance set resource_id = ? where id = ?", r.UUID, jobInstance.ID); err != nil {
 				Log.Fatalln(err)
 			}
 		}

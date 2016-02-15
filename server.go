@@ -21,7 +21,7 @@ type Server struct {
 	Enabled               bool
 	Resources             []Resource
 
-	Client *ssh.Client
+	Client      *ssh.Client
 }
 
 func (s *Server) Connect() error {
@@ -50,6 +50,17 @@ func FindServer(id int, servers []Server) *Server {
 	for i := 0; i < len(servers); i++ {
 		if servers[i].ID == id {
 			return &servers[i]
+		}
+	}
+	return nil
+}
+
+func FindServerResource(uuid string, servers []Server) *Resource {
+	for i := 0; i < len(servers); i++ {
+		for j := 0; j < len(servers[i].Resources); j++ {
+			if servers[i].Resources[j].UUID == uuid {
+				return &servers[i].Resources[j]
+			}
 		}
 	}
 	return nil
@@ -91,7 +102,7 @@ func LoadServers(db *sql.DB) ([]Server, error) {
 				return nil, err
 			}
 
-			servers[i].Resources = append(servers[i].Resources, Resource{Name: name, UUID: uuid, InUse: inuse, DeviceID: device_id, Parent: &servers[i]})
+			servers[i].Resources = append(servers[i].Resources, Resource{Name: name, UUID: uuid, InUse: inuse, DeviceID: device_id, Parent: &servers[i], JobQueue: make(chan *JobInstance, 1)})
 		}
 		rows.Close()
 	}
@@ -205,7 +216,7 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 	for scanner.Scan() {
 		result := re.FindAllStringSubmatch(scanner.Text(), -1)
 		if len(result) == 1 && len(result[0]) == 3 {
-			res := Resource{Name: result[0][1], UUID: result[0][2], InUse: false, Parent: &server, DeviceID: device}
+			res := Resource{Name: result[0][1], UUID: result[0][2], InUse: false, Parent: &server, DeviceID: device, JobQueue: make(chan *JobInstance, 1)}
 			server.Resources = append(server.Resources, res)
 
 			if _, err := DB.Exec("insert into server_resource(uuid, name, inuse, device, server_id) values (?,?,?,?,?)", res.UUID, res.Name, res.InUse, device, id); err != nil {
