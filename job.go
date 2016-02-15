@@ -29,7 +29,8 @@ func (j *Job) Complete() int {
 type JobInstance struct {
 	ID, PID   int
 	Completed bool
-	Parent    *Job
+	Parent    *Job      `json:"-"`
+	Resource  *Resource `json:"-"`
 }
 
 // Finds which job out of the maximum number this instance is
