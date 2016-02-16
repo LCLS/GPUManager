@@ -90,9 +90,10 @@
             <td>{{.Template.Name}}</td>
             <td>
               <div class="progress">
-                <div class="progress-bar progress-bar-striped" role="progressbar" aria-valuenow="{{complete .}}" aria-valuemin="0" aria-valuemax="{{count .Instances}}" style="width: {{percent .}}%;">
-                  <span><strong>{{complete .}}/{{count .Instances}}</strong></span>
-                </div>
+                <div class="progress-bar progress-bar-danger" role="progressbar" style="width: 0%;" data-toggle="tooltip" data-placement="bottom" data-original-title="0" aria-valuenow="0" aria-valuemin="0" aria-valuemax="{{count .Instances}}"></div>
+                <div class="progress-bar progress-bar-success" role="progressbar" style="width: {{percent .}}%;" data-toggle="tooltip" data-placement="bottom" data-original-title="{{complete .}}" aria-valuenow="{{complete .}}" aria-valuemin="0" aria-valuemax="{{count .Instances}}"></div>
+                <div class="progress-bar progress-bar-warning progress-bar-striped" role="progressbar" style="width: {{run_percent .}}%" data-toggle="tooltip" data-placement="bottom" data-original-title="{{running .}}" aria-valuenow="{{running .}}" aria-valuemin="0" aria-valuemax="{{count .Instances}}"/>
+                <span><strong>{{complete .}}/{{count .Instances}}</strong></span>
               </div>
             </td>
             <td><button type="button" onclick="removeItem({{.ID}})" class="btn btn-danger">Remove</button></td>
@@ -126,6 +127,8 @@
     }
 
     $(document).ready(function() {
+      $('[data-toggle="tooltip"]').tooltip({container: 'body'})
+
       $("#servers").tablesorter({ sortList: [[0, 0]] });
 
       $('form').submit(function(event) {

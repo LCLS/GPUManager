@@ -104,8 +104,26 @@ func jobHandler(w http.ResponseWriter, r *http.Request) {
 		"complete": func(in Job) int {
 			return in.Complete()
 		},
+		"running": func(in Job) int {
+			running := 0
+			for _, job := range in.Instances {
+				if job.PID != -1 && !job.Completed {
+					running++
+				}
+			}
+			return running
+		},
 		"percent": func(in Job) float32 {
 			return float32((float64(in.Complete()) / float64(len(in.Instances))) * 100.0)
+		},
+		"run_percent": func(in Job) float32 {
+			running := 0
+			for _, job := range in.Instances {
+				if job.PID != -1 && !job.Completed {
+					running++
+				}
+			}
+			return float32((float64(running) / float64(len(in.Instances))) * 100.0)
 		},
 	}
 
