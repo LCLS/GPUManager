@@ -25,7 +25,7 @@ func (t *Template) Process(device int, job Job) ([]byte, error) {
 		Seed, DeviceID int
 	}
 
-	data := TemplateData{Seed: rand.Int()}
+	data := TemplateData{Seed: int(rand.Int31())}
 	data.DeviceID = device
 	data.Output = fmt.Sprintf("sim.%d.dcd", data.Seed)
 	for _, file := range job.Model.Files {
