@@ -143,29 +143,38 @@ func (r *Resource) Handle() {
 
 		// Wait for completion
 		Log.Println("Waiting for completion")
-		session, err := r.Parent.Client.NewSession()
-		if err != nil {
-			Log.Fatalln(err)
-		}
+		for {
+			session, err := r.Parent.Client.NewSession()
+			if err != nil {
+				Log.Println(err)
+				r.Parent.Connect()
+			}
 
-		command := ""
-		if r.Parent.WorkingDirectory != "" {
-			command += "cd " + r.Parent.WorkingDirectory + "\n"
-		}
-		command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", jobInstance.Parent.Name, jobInstance.NumberInSequence()))
-		command += fmt.Sprintf("bash -c 'while [[ ( -d /proc/%d ) && ( -z `grep zombie /proc/%d/status` ) ]]; do sleep 1; done; sleep 1; cat exit-status'", jobInstance.PID, jobInstance.PID)
+			command := ""
+			if r.Parent.WorkingDirectory != "" {
+				command += "cd " + r.Parent.WorkingDirectory + "\n"
+			}
+			command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", jobInstance.Parent.Name, jobInstance.NumberInSequence()))
+			command += fmt.Sprintf("if [[ ( ! -d /proc/%d ) || ( ! -z `grep zombie /proc/%d/status` ) ]]; then cat exit-status; fi", jobInstance.PID, jobInstance.PID)
 
-		output, err := session.CombinedOutput(command)
-		if err != nil {
-			Log.Fatalln(string(output), err)
-		}
-		session.Close()
+			output, err := session.CombinedOutput(command)
+			if err != nil {
+				Log.Fatalln(string(output), err)
+			}
+			session.Close()
 
-		exitcode, err := strconv.Atoi(strings.TrimSpace(string(output)))
-		if err != nil {
-			Log.Fatalln(err)
+			if string(output) != "" {
+				exitcode, err := strconv.Atoi(strings.TrimSpace(string(output)))
+				if err != nil {
+					Log.Fatalln(err)
+				}
+				Log.Println("Exit Code:", exitcode)
+
+				break
+			}
+
+			time.Sleep(30 * time.Second)
 		}
-		Log.Println("Exit Code:", exitcode)
 
 		jobInstance.Completed = true
 		if _, err := DB.Exec("update job_instance set completed = ? where id = ?", jobInstance.Completed, jobInstance.ID); err != nil {
