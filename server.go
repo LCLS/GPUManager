@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"text/template"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -21,7 +22,7 @@ type Server struct {
 	Enabled               bool
 	Resources             []Resource
 
-	Client      *ssh.Client
+	Client *ssh.Client
 }
 
 func (s *Server) Connect() error {
@@ -33,7 +34,7 @@ func (s *Server) Connect() error {
 	}
 
 	var err error
-	if s.Client, err = ssh.Dial("tcp", s.URL+":22", config); err != nil {
+	if s.Client, err = SSHDialTimeout("tcp", s.URL+":22", config, 1*time.Minute); err != nil {
 		return err
 	}
 	return nil
@@ -170,7 +171,7 @@ func serverAddHandker(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	client, err := ssh.Dial("tcp", r.FormValue("server_name")+":22", config)
+	client, err := SSHDialTimeout("tcp", r.FormValue("server_name")+":22", config, 1*time.Minute)
 	if err != nil {
 		json.NewEncoder(w).Encode(JSONResponse{Success: false, Message: fmt.Sprintf("Error connecting to %s. Please check the url and username/password.", r.FormValue("server_name"))})
 		return
