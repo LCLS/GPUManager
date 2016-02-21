@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -53,7 +52,6 @@ func (r *Resource) Handle() {
 		}
 		r.InUse = true
 
-		time.Sleep(time.Duration(rand.Int31n(10)) * time.Second)
 		Log.Println(jobInstance)
 
 		if jobInstance.PID == -1 {
