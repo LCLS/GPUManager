@@ -114,7 +114,7 @@ func (r *Resource) Handle() {
 				command += "cd " + r.Parent.WorkingDirectory + "\n"
 			}
 			command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", jobInstance.Parent.Name, jobInstance.NumberInSequence()))
-			command += "bash -c '(ProtoMol sim.conf &> log.txt 2>&1 & echo $! > pidfile); wait $(cat pidfile); echo $? > exit-status' &> /dev/null &\n"
+			command += "bash -c '(ProtoMol sim.conf &> log.txt 2>&1 & echo $! > pidfile); sleep 1; wait $(cat pidfile); echo $? > exit-status' &> /dev/null &\n"
 			command += "sleep 1\n"
 			command += "cat pidfile"
 
