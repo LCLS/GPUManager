@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"os"
 	"strings"
+	"text/template"
 )
 
 type Template struct {
@@ -34,6 +34,11 @@ func (t *Template) Process(device int, job Job) ([]byte, error) {
 			data.Input = strings.ToLower(fmt.Sprintf("gromacstprfile ../../../model/%s/%s", job.Model.Name, file))
 			break
 		}
+
+		if parts[len(parts)-1] == "pdb" {
+			data.Input = strings.ToLower(fmt.Sprintf("../../../model/%s/%s", job.Model.Name, file))
+			break
+		}
 	}
 
 	temp, err := template.New(strings.Split(job.Template.File, "/")[1]).ParseFiles(job.Template.File)
@@ -47,6 +52,11 @@ func (t *Template) Process(device int, job Job) ([]byte, error) {
 	}
 
 	return templateData.Bytes(), nil
+}
+
+func (t *Template) IsProtoMol() bool {
+	parts := strings.Split(strings.ToLower(t.File), ".")
+	return parts[len(parts)-1] == "conf"
 }
 
 var Templates []Template
@@ -121,7 +131,11 @@ func templateAddHandler(w http.ResponseWriter, r *http.Request) {
 		for _, fileHeader := range fileHeaders {
 			file, _ := fileHeader.Open()
 			buf, _ := ioutil.ReadAll(file)
-			ioutil.WriteFile(fmt.Sprintf("data/%s.template", name), buf, os.ModePerm)
+
+			parts := strings.Split(strings.ToLower(fileHeader.Filename), ".")
+			extension := parts[len(parts)-1]
+			ioutil.WriteFile(fmt.Sprintf("data/%s.template.%s", name, extension), buf, os.ModePerm)
+			template.File = fmt.Sprintf("data/%s.template.%s", name, extension)
 		}
 	}
 

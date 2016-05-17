@@ -82,6 +82,18 @@ func (r *Resource) Handle() {
 				fIn.Close()
 			}
 
+			// Setup Job Type Parameters
+			executable := ""
+			configuration := ""
+
+			if jobInstance.Parent.Template.IsProtoMol() {
+				executable = "ProtoMol"
+				configuration = "sim.conf"
+			} else {
+				executable = "python"
+				configuration = "sim.py"
+			}
+
 			// Send Template Data
 			template, err := jobInstance.Parent.Template.Process(r.DeviceID, *jobInstance.Parent)
 			if err != nil {
@@ -92,7 +104,7 @@ func (r *Resource) Handle() {
 			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(jobInstance.Parent.Name)))
 			sftp.Mkdir(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(jobInstance.Parent.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence()))))
 
-			fOut, err := sftp.Create(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(jobInstance.Parent.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence())), "sim.conf"))
+			fOut, err := sftp.Create(sftp.Join(r.Parent.WorkingDirectory, "job", strings.ToLower(jobInstance.Parent.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence())), configuration))
 			if err != nil {
 				Log.Fatalln(err)
 			}
@@ -114,7 +126,7 @@ func (r *Resource) Handle() {
 				command += "cd " + r.Parent.WorkingDirectory + "\n"
 			}
 			command += strings.ToLower(fmt.Sprintf("cd job/%s/%d\n", jobInstance.Parent.Name, jobInstance.NumberInSequence()))
-			command += "bash -c '(ProtoMol sim.conf &> log.txt 2>&1 & echo $! > pidfile); sleep 1; wait $(cat pidfile); echo $? > exit-status' &> /dev/null &\n"
+			command += "bash -c '(" + executable + " " + configuration + " &> log.txt 2>&1 & echo $! > pidfile); sleep 1; wait $(cat pidfile); echo $? > exit-status' &> /dev/null &\n"
 			command += "sleep 1\n"
 			command += "cat pidfile"
 
