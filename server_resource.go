@@ -188,6 +188,52 @@ func (r *Resource) Handle() {
 			time.Sleep(30 * time.Second)
 		}
 
+		// Copy Results to Archives
+		for _, archive := range Archives {
+			if !archive.Enabled {
+				continue
+			}
+
+			jobFtp, err := sftp.NewClient(r.Parent.Client)
+			if err != nil {
+				Log.Fatal(err)
+			}
+
+			archiveFtp, err := sftp.NewClient(archive.Client)
+			if err != nil {
+				Log.Fatal(err)
+			}
+
+			workingPath := jobFtp.Join(strings.ToLower(jobInstance.Parent.Name), strings.ToLower(fmt.Sprintf("%d", jobInstance.NumberInSequence())))
+
+			// Create Directory
+			archiveFtp.Mkdir(archiveFtp.Join(archive.WorkingDirectory, strings.ToLower(jobInstance.Parent.Name)))
+			archiveFtp.Mkdir(archiveFtp.Join(archive.WorkingDirectory, workingPath))
+
+			// Find Files
+			files, err := jobFtp.ReadDir(jobFtp.Join(r.Parent.WorkingDirectory, "job", workingPath))
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			// Copy Files
+			for _, file := range files {
+				fIn, err := jobFtp.Open(jobFtp.Join(r.Parent.WorkingDirectory, "job", workingPath, file.Name()))
+				if err != nil {
+					Log.Fatalln(err)
+				}
+				defer fIn.Close()
+
+				fOut, err := archiveFtp.Create(archiveFtp.Join(archive.WorkingDirectory, workingPath, file.Name()))
+				if err != nil {
+					Log.Fatalln(err)
+				}
+				defer fOut.Close()
+
+				io.Copy(fOut, fIn)
+			}
+		}
+
 		jobInstance.Completed = true
 		if _, err := DB.Exec("update job_instance set completed = ? where id = ?", jobInstance.Completed, jobInstance.ID); err != nil {
 			Log.Fatalln(err)

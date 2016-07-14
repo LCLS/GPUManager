@@ -45,6 +45,9 @@ func main() {
 	http.HandleFunc("/template/add", templateAddHandler)
 	http.HandleFunc("/template/remove", templateRemoveHandler)
 
+	http.HandleFunc("/archive", archiveHandler)
+	http.HandleFunc("/archive/add", archiveAddHandler)
+
 	// Load Servers
 	servers, err := LoadServers(DB)
 	if err != nil {
@@ -57,6 +60,17 @@ func main() {
 		resources += len(server.Resources)
 	}
 	JobQueue = make(chan *JobInstance, resources)
+
+	// Load Archives
+	archives, err := LoadArchives(DB)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	Archives = archives
+
+	for i := 0; i < len(Archives); i++ {
+		Archives[i].Connect()
+	}
 
 	// Load Models
 	models, err := LoadModels(DB)
