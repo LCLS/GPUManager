@@ -45,6 +45,8 @@ func main() {
 	http.HandleFunc("/template/add", templateAddHandler)
 	http.HandleFunc("/template/remove", templateRemoveHandler)
 
+	http.HandleFunc("/archive", archiveHandler)
+
 	// Load Servers
 	servers, err := LoadServers(DB)
 	if err != nil {
