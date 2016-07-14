@@ -73,9 +73,18 @@
 
       <table id="archives" class="table table-bordered table-hover text-center">
         <thead>
-          <tr><th class="col-md-3">URL</th><th class="col-md-3">Working Directory</th><th class="col-md-4">Space Available</th><th class="col-md-1">Toggle</th><th class="col-md-1">Remove</th></tr>
+          <tr><th class="col-md-3">URL</th><th class="col-md-3">Working Directory</th><th class="col-md-4">Disk Space</th><th class="col-md-1">Toggle</th><th class="col-md-1">Remove</th></tr>
         </thead>
         <tbody>
+        {{range .}}
+          <tr id="{{.ID}}" {{if eq .Enabled false}}class="danger"{{end}}>
+            <td>{{.URL}}</td>
+            <td>{{.WorkingDirectory}}</td>
+            <td><div class="progress"><div class="progress-bar progress-bar-striped" role="progressbar" aria-valuenow="{{.SpaceUsed}}" aria-valuemin="0" aria-valuemax="{{.SpaceTotal}}" style="width: {{.SpacePercent}}%;"><span><strong>{{.SpaceText}}</strong></span></div></div></td>
+            <td class="toggle"><button type="button" onclick="toggle({{.ID}})" class="btn {{if eq .Enabled true}}btn-danger{{else}}btn-success{{end}}">{{if eq .Enabled true}}Disable{{else}}Enable{{end}}</button></td>
+            <td><button type="button" onclick="removeItem({{.ID}})" class="btn btn-danger">Remove</button></td>
+          </tr>
+        {{end}}
         </tbody>
       </table>
     </div>
@@ -89,8 +98,26 @@
     $(document).ready(function() {
         $("#archives").tablesorter({ sortList: [[0, 0]] });
 
-        $( 'form' ).each(function(){
-          this.reset();
+        $('form').submit(function(event) {
+            event.preventDefault();
+
+            $.ajax({
+                type        : 'POST',
+                url         : '/archive/add',
+                data        :  $(this).serialize(),
+                dataType    : 'json',
+                encode      : true
+            }).done(function(data) {
+                if( data.success ) {
+                    $('table > tbody:last').append("<tr id="+data.archive.ID+"><td>"+data.archive.url+"</td><td>"+data.archiveserver.wdir+"</td><td><div class=\"progress\"><div class=\"progress-bar progress-bar-striped\" role=\"progressbar\" aria-valuenow=\""+data.server.spacefree+"\" aria-valuemin=\"0\" aria-valuemax=\""+data.server.resources+"\" style=\"width: "+data.server.spacepercent+"%;\"><span><strong>"+data.server.spacetext+"</strong></span></div></div></td><td class=\"toggle\"><button type=\"button\" onclick=\"toggle("+data.server.ID+")\" class=\"btn btn-danger\">Disable</button></td><td><button type=\"button\" onclick=\"removeItem("+data.server.ID+")\" class=\"btn btn-danger\">Remove</button></td></tr>")
+                }else{
+                    $("<div class=\"alert alert-danger alert-dismissible\" role=\"alert\"><button type=\"button\" class=\"close\" data-dismiss=\"alert\" aria-label=\"Close\"><span aria-hidden=\"true\">&times;</span></button>"+data.message+"</div>").insertBefore("form")
+                }
+            });
+
+            $( 'form' ).each(function(){
+                this.reset();
+            });
         });
     });
     </script>
