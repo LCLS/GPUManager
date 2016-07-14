@@ -26,6 +26,26 @@ type Archive struct {
 	Client *ssh.Client
 }
 
+func (a *Archive) Connect() error {
+	config := &ssh.ClientConfig{
+		User: a.Username,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(a.Password),
+		},
+	}
+
+	var err error
+	if a.Client, err = SSHDialTimeout("tcp", a.URL+":22", config, 1*time.Minute); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *Archive) Disconnect() {
+	a.Client.Close()
+	a.Client = nil
+}
+
 func (a *Archive) StringUsedTotal() string {
 	total := a.SpaceTotal
 	if a.SpaceTotal > (1024 * 1024 * 1024) {

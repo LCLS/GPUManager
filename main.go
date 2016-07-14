@@ -68,6 +68,10 @@ func main() {
 	}
 	Archives = archives
 
+	for i := 0; i < len(Archives); i++ {
+		Archives[i].Connect()
+	}
+
 	// Load Models
 	models, err := LoadModels(DB)
 	if err != nil {
